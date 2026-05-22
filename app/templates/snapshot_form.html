@@ -2,6 +2,18 @@
 {% block title %}{{ form_title }} · Net Worth{% endblock %}
 
 {% block content %}
+{% if no_accounts %}
+<div class="max-w-xl mx-auto mt-12">
+  <div class="bg-white border border-slate-200 rounded-lg p-8 text-center">
+    <h1 class="text-2xl font-semibold text-slate-900 mb-2">No accounts yet</h1>
+    <p class="text-slate-600 mb-6">A snapshot captures the balance of each account at a point in time, so you need at least one account before you can record one.</p>
+    <a href="/accounts/new" class="inline-block bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">Add your first account</a>
+    <div class="mt-4">
+      <a href="/accounts" class="text-sm text-brand-700 hover:underline">or browse the Accounts page</a>
+    </div>
+  </div>
+</div>
+{% else %}
 <form method="post" action="{{ form_action }}" class="space-y-6">
 
   <!-- Sticky header: title, date/time, notes, save -->
@@ -139,6 +151,7 @@
     </div>
   </div>
 </form>
+{% endif %}
 
 <script>
   // Click a card face → toggle the corresponding editor panel

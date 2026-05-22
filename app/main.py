@@ -239,6 +239,16 @@ def _build_card_grid(db: Session, prefill: Optional[dict] = None) -> dict:
 
 @app.get("/snapshots/new", response_class=HTMLResponse)
 def snapshot_new_form(request: Request, db: Session = Depends(get_db)):
+    if not services.active_leaf_accounts(db):
+        return templates.TemplateResponse(
+            "snapshot_form.html",
+            {
+                "request": request,
+                "view_id": "snapshot_form",
+                "no_accounts": True,
+                "form_title": "New snapshot",
+            },
+        )
     latest = services.latest_snapshot(db)
     prefill = services.balance_map(latest)
     grid = _build_card_grid(db, prefill)
@@ -261,6 +271,8 @@ def snapshot_new_form(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/snapshots")
 async def snapshot_create(request: Request, db: Session = Depends(get_db)):
+    if not services.active_leaf_accounts(db):
+        raise HTTPException(400, "Add at least one account before creating a snapshot.")
     form = await request.form()
     snap_dt = _parse_dt(form.get("snapshot_date"))
     notes = (form.get("notes") or "").strip()
