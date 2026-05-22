@@ -1,0 +1,233 @@
+# In-app help, organised by view.
+#
+# Layout:
+#   views:               one entry per page. Title appears in the panel header.
+#     <view_id>:
+#       title:           shown as "Help · {title}" in the panel header
+#       sections:        ordered list of sections rendered for that view
+#         - id:          used for the in-panel anchor link
+#           title:       section heading (HTML allowed)
+#           body:        HTML; write whatever's easiest to author
+#
+#   global:              sections appended to every view (e.g. universal concepts)
+#
+# Edit freely and restart the app to pick up changes.
+
+views:
+
+  # ---------------- Dashboard ----------------
+  dashboard:
+    title: Dashboard
+    sections:
+      - id: dash-headlines
+        title: Headline cards
+        body: |
+          <p>The three big cards at the top:</p>
+          <ul class="list-disc pl-5 space-y-1">
+            <li><strong>Net Worth</strong> — sum of all categories where "In Net Worth" is checked on the Categories page.</li>
+            <li><strong>Liquid</strong> — categories marked "In Liquid". By default this is Cash + Investments.</li>
+            <li><strong>Net Worth + Aux</strong> — adds in things like Life Insurance / Death in Service that you don't own today, but are part of your wider estate.</li>
+          </ul>
+          <p>The small green/red value beneath each headline is the change since your <em>previous</em> snapshot. Green = good for you, red = bad. For categories marked as liabilities, the sign convention works out automatically — paying down debt shows green even though the stored amount becomes "less negative".</p>
+
+      - id: dash-breakdown
+        title: Category breakdown table
+        body: |
+          <p>Each category row is clickable — click it to expand and see the accounts within. Group rows (like Monzo or Trading 212) expand a second time to show the individual accounts that make up the group.</p>
+          <p>The <em>Expand all</em> / <em>Collapse all</em> button in the header toggles every level at once.</p>
+          <p>The "% of Net Worth" column shows how much of your total worth each category represents. Categories flagged "(aux)" — like Life Insurance — are excluded from this percentage because they aren't part of Net Worth.</p>
+
+      - id: dash-charts
+        title: Trend & allocation charts
+        body: |
+          <p>The trend chart shows your Net Worth and Liquid totals over time. Toggle between <em>Weekly</em> (all snapshots), <em>Monthly</em> (the latest snapshot per month), and <em>Quarterly</em> (the latest per quarter) using the buttons in the chart header.</p>
+          <p>The allocation doughnut shows the latest split across categories that count toward Net Worth. Liabilities and aux categories are excluded so the slices add to 100%.</p>
+
+      - id: dash-next
+        title: What to do next
+        body: |
+          <p>If you've only got one snapshot, the trend chart will look sparse and there'll be no deltas yet. Add a second snapshot tomorrow, next week, or whenever — even minutes later if you're testing — and the dashboard becomes meaningful.</p>
+          <p>Click <em>+ New snapshot</em> in the top-right to record a new point in time.</p>
+
+  # ---------------- Snapshots list ----------------
+  snapshots:
+    title: Snapshots
+    sections:
+      - id: snap-list
+        title: What's on this page
+        body: |
+          <p>Every snapshot you've ever recorded, newest first. Each row shows the date/time, the Net Worth and Liquid totals for that point in time, how many account balances were captured, and any notes you added.</p>
+
+      - id: snap-edit
+        title: Editing a past snapshot
+        body: |
+          <p>Click <em>Edit</em> on any row to re-open the snapshot in a form with all the previously-entered values. Useful for fixing a typo or filling in a balance you skipped at the time.</p>
+          <p>Saving an edit updates the existing snapshot — the dashboard and trend charts will reflect the change immediately.</p>
+
+      - id: snap-delete
+        title: Deleting a snapshot
+        body: |
+          <p><strong>Delete</strong> permanently removes the snapshot and all its balances. This is irreversible — there's no soft-delete or trash. Consider exporting to CSV first if you're unsure.</p>
+
+  # ---------------- Snapshot form (new + edit) ----------------
+  snapshot_form:
+    title: Snapshot form
+    sections:
+      - id: snap-form-cards
+        title: How the cards work
+        body: |
+          <p>Each top-level account is rendered as a card showing its category, name, last-known balance, and (where set) the institution's logo. Group accounts like Monzo or Trading 212 show the <em>sum</em> of their children's balances.</p>
+          <ol class="list-decimal pl-5 space-y-1">
+            <li>Click a card to expand it. For a single-account card you get one input; for a group card you get one input per child account.</li>
+            <li>Type the new balance(s). Leave any input blank to skip — that account simply won't be recorded on this snapshot.</li>
+            <li>Click as many cards as you need. They all stay expanded; nothing collapses on you.</li>
+            <li>When you're done, hit <em>Save</em> at the top or bottom. One snapshot is created containing all the values you entered.</li>
+          </ol>
+
+      - id: snap-form-meta
+        title: Date, time, and notes
+        body: |
+          <p>The Date &amp; time field defaults to right now. Adjust it if you're capturing a historical reading or a specific market-close moment.</p>
+          <p>The Notes field is optional but valuable — future-you will thank present-you for "got bonus", "market dipped", "house revalued", etc.</p>
+          <p>Multiple snapshots per day are supported — the time portion disambiguates them.</p>
+
+      - id: snap-form-tips
+        title: Tips
+        body: |
+          <ul class="list-disc pl-5 space-y-1">
+            <li>Use a leading minus for liabilities and overdrafts (e.g. <code>-2335.03</code>).</li>
+            <li>Currency symbols and commas in the input are tolerated — both <code>£50,000.00</code> and <code>50000</code> work.</li>
+            <li>Cards you don't touch carry their previous value forward automatically.</li>
+            <li>To set the logo on a card, edit the account on the Accounts page and enter the institution domain (e.g. <code>monzo.com</code>). Logos are fetched from clearbit.com.</li>
+          </ul>
+
+  # ---------------- Accounts (card grid) ----------------
+  accounts:
+    title: Accounts
+    sections:
+      - id: acc-grid
+        title: Browsing accounts
+        body: |
+          <p>Every top-level account is a card, grouped under its category. Click a card to drill into its detail page — full edit form, balance history, and (for groups) a list of its sub-accounts you can click into too.</p>
+          <p>Sub-accounts (like the 12 Monzo pots) don't appear here; click the parent group's card to manage them.</p>
+
+      - id: acc-add
+        title: Adding accounts
+        body: |
+          <p>The <em>+ Add account</em> button in the top-right opens a fresh creation form. Pick a name, category, and (optionally) a parent group. Saving lands you on the new account's detail page.</p>
+
+      - id: acc-inactive
+        title: Inactive vs. deleted
+        body: |
+          <p>Untick <em>Active</em> on the detail page to hide an account from new snapshot forms while keeping its history intact. Useful when you close an account but want to keep the historical balances visible on the dashboard charts.</p>
+          <p><strong>Delete</strong> removes the account <em>and</em> all its historical balances permanently. Almost always you want "inactive" instead.</p>
+
+  # ---------------- Account detail page ----------------
+  account_detail:
+    title: Account detail
+    sections:
+      - id: acc-det-form
+        title: Editing
+        body: |
+          <p>The form on the left covers every property of the account. Saving stays on this page so you can keep tweaking; the hero card at the top updates with the new values on next render.</p>
+          <p>The Institution field drives the logo on the snapshot card and across the rest of the app. Leave it blank on a child account and it'll inherit from its parent group.</p>
+
+      - id: acc-det-trend
+        title: Trend &amp; recent values
+        body: |
+          <p>The sparkline shows this account's balance over every snapshot you've recorded. For group accounts it sums the children per snapshot.</p>
+          <p>The Recent values table lists the last 10 snapshots with the Δ vs the prior reading — handy for spotting unusual moves.</p>
+
+      - id: acc-det-children
+        title: Sub-accounts
+        body: |
+          <p>If this account is a group, the Sub-accounts panel lists every child with its current balance and a link to that child's own detail page. Use this to walk the hierarchy without going back to the main accounts list.</p>
+
+  # ---------------- Categories ----------------
+  categories:
+    title: Categories
+    sections:
+      - id: cat-flags
+        title: What each flag means
+        body: |
+          <dl class="space-y-2">
+            <div>
+              <dt class="font-medium text-slate-800">In Net Worth</dt>
+              <dd class="text-slate-600">If checked, balances in this category count toward your headline Net Worth figure. Uncheck for things like Life Insurance / Death in Service that you don't own today.</dd>
+            </div>
+            <div>
+              <dt class="font-medium text-slate-800">In Liquid</dt>
+              <dd class="text-slate-600">If checked, balances roll into the "Liquid (Cash + Investments)" headline. Typically just Cash and Investments — exclude Pension, Property, etc.</dd>
+            </div>
+            <div>
+              <dt class="font-medium text-slate-800">Is a Liability</dt>
+              <dd class="text-slate-600">Flags the category as a liability (e.g. Mortgage). The allocation doughnut on the dashboard excludes liability categories so the slices add to 100%.</dd>
+            </div>
+            <div>
+              <dt class="font-medium text-slate-800">Colour</dt>
+              <dd class="text-slate-600">Used as the swatch next to category names and as the slice colour in the allocation doughnut. Any web colour works.</dd>
+            </div>
+          </dl>
+
+      - id: cat-delete
+        title: Deleting a category
+        body: |
+          <p>A category can't be deleted while accounts are assigned to it. Reassign the affected accounts to a different category first, then come back to delete.</p>
+
+  # ---------------- Import / Export ----------------
+  import_export:
+    title: Import / Export
+    sections:
+      - id: ie-export
+        title: Export
+        body: |
+          <p>Downloads a wide-format CSV: one row per snapshot, one column per leaf account, plus derived <em>Liquid</em>, <em>Net Worth</em>, and <em>Net Worth + Aux</em> columns for sanity-checking in a spreadsheet.</p>
+          <p>Use this as a periodic backup or as a starting point for slicing your history in Excel / Google Sheets.</p>
+
+      - id: ie-import
+        title: Import
+        body: |
+          <p>Upload a CSV in the same wide format. Required: a <code>Date</code> column (<code>YYYY-MM-DD</code> or <code>YYYY-MM-DDTHH:MM</code>). Optional: a <code>Notes</code> column. Every other column is matched <em>case-insensitively</em> to an existing account name.</p>
+          <p>If a column doesn't match any account, it's reported as <em>unmatched</em> and ignored — no rows are skipped, just that column. Derived columns (Liquid / Net Worth / Net Worth + Aux) are recognised and skipped automatically.</p>
+          <p>If a snapshot already exists for the exact same date+time, choose <em>Skip</em> to keep it untouched or <em>Overwrite</em> to replace it.</p>
+
+      - id: ie-roundtrip
+        title: Round-tripping
+        body: |
+          <p>Export → Import on the same file with <em>Overwrite</em> selected produces an identical dataset. Useful for verifying backups or migrating between hosts.</p>
+
+
+# ---------------- Global ----------------
+# Sections in `global` appear at the end of every view's help panel.
+# Use sparingly — content that genuinely belongs everywhere.
+
+global:
+  - id: glb-concepts
+    title: Key concepts
+    body: |
+      <dl class="space-y-2">
+        <div>
+          <dt class="font-medium text-slate-800">Snapshot</dt>
+          <dd class="text-slate-600">A single point-in-time capture of your balances. Multiple per day are supported.</dd>
+        </div>
+        <div>
+          <dt class="font-medium text-slate-800">Account</dt>
+          <dd class="text-slate-600">A single place you hold money (e.g. NS&amp;I, Monzo Personal).</dd>
+        </div>
+        <div>
+          <dt class="font-medium text-slate-800">Group</dt>
+          <dd class="text-slate-600">A folder of accounts — sums its children, has no balance of its own.</dd>
+        </div>
+        <div>
+          <dt class="font-medium text-slate-800">Category</dt>
+          <dd class="text-slate-600">How accounts roll up: Cash, Investments, Pension, Property, Liability, etc.</dd>
+        </div>
+      </dl>
+
+  - id: glb-shortcuts
+    title: Keyboard shortcuts
+    body: |
+      <ul class="list-disc pl-5 space-y-1">
+        <li><kbd class="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded text-xs">?</kbd> &nbsp; open this help</li>
+        <li><kbd class="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded text-xs">Esc</kbd> &nbsp; close this help</li>
+      </ul>

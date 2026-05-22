@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title }} · Net Worth{% endblock %}
+
+{% block content %}
+<form method="post" action="{{ form_action }}" class="space-y-6">
+
+  <!-- Sticky header: title, date/time, notes, save -->
+  <div class="bg-white border border-slate-200 rounded-lg p-5 sticky top-16 z-10 shadow-sm">
+    <div class="flex items-center justify-between gap-4 mb-3">
+      <h1 class="text-xl font-semibold">{{ form_title }}</h1>
+      <button type="submit" class="bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">{{ submit_label }}</button>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Date &amp; time</label>
+        <input type="datetime-local" name="snapshot_date" required value="{{ default_date }}"
+               class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-xs font-medium text-slate-600 mb-1">Notes (optional)</label>
+        <input type="text" name="notes" value="{{ snapshot.notes if snapshot else '' }}" placeholder="e.g. End of month, bonus paid, etc."
+               class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
+      </div>
+    </div>
+    <p class="mt-2 text-xs text-slate-500">
+      Click a card to enter or change a balance. Cards you don't touch retain their previous values when you save.
+    </p>
+  </div>
+
+  <!-- Card grid, grouped by category -->
+  {% for cat_bucket in grid.categories %}
+    {% set cat = cat_bucket.category %}
+    <section>
+      <h2 class="flex items-center gap-2 text-xs uppercase tracking-wider font-semibold text-slate-600 mb-3">
+        <span class="inline-block w-2.5 h-2.5 rounded-full" style="background: {{ cat.color }}"></span>
+        {{ cat.name }}
+        <span class="text-slate-400 font-normal normal-case tracking-normal">· {{ cat_bucket.cards|length }} {% if cat_bucket.cards|length == 1 %}account{% else %}accounts{% endif %}</span>
+      </h2>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for card in cat_bucket.cards %}
+          {% set acc = card.account %}
+          {% set children = card.children %}
+          {% set lg = account_logo(acc) %}
+          <div class="account-card rounded-xl overflow-hidden shadow-md hover:shadow-lg transition-shadow"
+               data-card-id="{{ acc.id }}">
+
+            <!-- Card face: looks like a payment card -->
+            <button type="button" class="card-face block w-full text-left text-white p-5 relative min-h-[170px] flex flex-col justify-between"
+                    aria-expanded="false" aria-controls="card-editor-{{ acc.id }}"
+                    style="background: linear-gradient(135deg, {{ cat.color }} 0%, #1e293b 105%);">
+
+              {% if lg.primary %}
+                <img src="{{ lg.primary }}" alt="" loading="lazy"
+                     class="absolute top-4 right-4 w-12 h-12 rounded-md bg-white/95 p-1.5 shadow object-contain account-logo"
+                     {% if lg.fallback %}data-fallback="{{ lg.fallback }}"{% endif %}
+                     onerror="logoFallback(this)">
+              {% else %}
+                <div class="absolute top-4 right-4 w-12 h-12 rounded-md bg-white/15"></div>
+              {% endif %}
+
+              <div>
+                <div class="text-[10px] uppercase tracking-widest opacity-80 font-medium">{{ cat.name }}</div>
+                <div class="text-lg font-semibold mt-1 leading-tight pr-16">{{ acc.name }}</div>
+                {% if acc.is_group %}
+                  <div class="text-xs opacity-70 mt-0.5">{{ children|length }} sub-accounts</div>
+                {% elif acc.notes %}
+                  <div class="text-xs opacity-70 mt-0.5">{{ acc.notes }}</div>
+                {% endif %}
+              </div>
+
+              <div>
+                <div class="text-2xl font-bold num">{% if card.current_total is not none %}{{ card.current_total|gbp }}{% else %}<span class="opacity-60">—</span>{% endif %}</div>
+                <div class="text-xs opacity-70 mt-0.5">
+                  {% if latest_date %}As of {{ latest_date|dt }}{% else %}No prior snapshot{% endif %}
+                </div>
+              </div>
+
+              <!-- Chevron indicator -->
+              <span class="absolute bottom-4 right-4 text-white/70 text-xs uppercase tracking-wider chev-text">Tap to edit</span>
+            </button>
+
+            <!-- Editor: inputs revealed when expanded -->
+            <div id="card-editor-{{ acc.id }}" class="card-editor hidden bg-white border-t border-slate-200 p-4 space-y-2">
+              {% if children %}
+                {% for child in children %}
+                  {% set child_lg = account_logo(child) %}
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2 min-w-0 flex-1">
+                      {% if child_lg.primary %}
+                        <img src="{{ child_lg.primary }}" alt="" loading="lazy"
+                             class="account-logo w-5 h-5 rounded object-contain bg-white border border-slate-200 shrink-0"
+                             {% if child_lg.fallback %}data-fallback="{{ child_lg.fallback }}"{% endif %}
+                             onerror="logoFallback(this)">
+                      {% else %}
+                        <div class="w-5 h-5 rounded border border-dashed border-slate-200 shrink-0"></div>
+                      {% endif %}
+                      <div class="min-w-0">
+                        <div class="text-sm font-medium text-slate-800 truncate">{{ child.name }}</div>
+                        <div class="text-xs text-slate-400">
+                          {% if child.id in prefill %}Last: {{ prefill[child.id]|gbp }}{% else %}No prior value{% endif %}
+                        </div>
+                      </div>
+                    </div>
+                    <input type="text" inputmode="decimal" name="acc_{{ child.id }}"
+                           value="{{ prefill[child.id] if child.id in prefill else '' }}"
+                           placeholder="0.00"
+                           class="num w-32 text-right border border-slate-300 rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
+                  </div>
+                {% endfor %}
+              {% else %}
+                <div class="flex items-center justify-between gap-3">
+                  <div class="min-w-0 flex-1">
+                    <div class="text-xs text-slate-400">
+                      {% if acc.id in prefill %}Last: {{ prefill[acc.id]|gbp }}{% else %}No prior value{% endif %}
+                    </div>
+                  </div>
+                  <input type="text" inputmode="decimal" name="acc_{{ acc.id }}"
+                         value="{{ prefill[acc.id] if acc.id in prefill else '' }}"
+                         placeholder="0.00"
+                         class="num w-32 text-right border border-slate-300 rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+
+  <!-- Footer save bar -->
+  <div class="flex items-center justify-between border-t border-slate-200 pt-4">
+    <div class="text-xs text-slate-500">
+      Empty inputs are skipped on save. Use a leading minus for liabilities and overdrafts.
+    </div>
+    <div class="flex gap-2">
+      <a href="/snapshots" class="px-4 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50">Cancel</a>
+      <button type="submit" class="bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">{{ submit_label }}</button>
+    </div>
+  </div>
+</form>
+
+<script>
+  // Click a card face → toggle the corresponding editor panel
+  document.querySelectorAll('.card-face').forEach(face => {
+    face.addEventListener('click', () => {
+      const card = face.closest('.account-card');
+      const editor = card.querySelector('.card-editor');
+      const expanded = !editor.classList.contains('hidden');
+      editor.classList.toggle('hidden', expanded);
+      face.setAttribute('aria-expanded', String(!expanded));
+      face.querySelector('.chev-text').textContent = expanded ? 'Tap to edit' : 'Tap to close';
+      // Focus the first input when opening
+      if (!expanded) {
+        const firstInput = editor.querySelector('input');
+        if (firstInput) firstInput.focus();
+      }
+    });
+  });
+
+  // When editing a snapshot, pre-expand cards that already have any value
+  {% if snapshot %}
+    document.querySelectorAll('.card-editor').forEach(editor => {
+      const hasValue = Array.from(editor.querySelectorAll('input'))
+        .some(i => i.value && i.value.trim() !== '');
+      if (hasValue) {
+        editor.classList.remove('hidden');
+        const face = editor.parentElement.querySelector('.card-face');
+        face.setAttribute('aria-expanded', 'true');
+        face.querySelector('.chev-text').textContent = 'Tap to close';
+      }
+    });
+  {% endif %}
+</script>
+{% endblock %}

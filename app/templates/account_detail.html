@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block title %}{{ account.name }} · Accounts · Net Worth{% endblock %}
+
+{% block content %}
+{% set lg = account_logo(account) %}
+{% set cat = account.category %}
+
+<header class="mb-4">
+  <a href="/accounts" class="text-sm text-slate-500 hover:text-slate-800">← All accounts</a>
+</header>
+
+<!-- Hero card mirrors the snapshot-card look -->
+<div class="rounded-xl overflow-hidden shadow-md mb-6">
+  <div class="text-white p-6 relative min-h-[180px] flex flex-col justify-between"
+       style="background: linear-gradient(135deg, {{ cat.color }} 0%, #1e293b 105%);">
+    {% if lg.primary %}
+      <img src="{{ lg.primary }}" alt="" loading="lazy"
+           class="absolute top-5 right-5 w-14 h-14 rounded-md bg-white/95 p-1.5 shadow object-contain account-logo"
+           {% if lg.fallback %}data-fallback="{{ lg.fallback }}"{% endif %}
+           onerror="logoFallback(this)">
+    {% endif %}
+
+    <div>
+      <div class="text-[10px] uppercase tracking-widest opacity-80 font-medium">{{ cat.name }}</div>
+      <div class="text-2xl font-semibold mt-1 leading-tight pr-20">{{ account.name }}</div>
+      {% if account.is_group %}
+        <div class="text-xs opacity-70 mt-1">Group · {{ children|length }} sub-accounts</div>
+      {% elif account.notes %}
+        <div class="text-xs opacity-70 mt-1">{{ account.notes }}</div>
+      {% endif %}
+      {% if not account.is_active %}
+        <span class="text-[10px] uppercase tracking-wider bg-white/20 px-1.5 py-0.5 rounded mt-2 inline-block">Inactive</span>
+      {% endif %}
+    </div>
+
+    <div>
+      {% if history %}
+        {% set latest = history[-1] %}
+        <div class="text-3xl font-bold num">{{ latest[1]|gbp }}</div>
+        <div class="text-xs opacity-70 mt-0.5">As of {{ latest[0]|dt }}</div>
+      {% else %}
+        <div class="text-3xl font-bold num opacity-60">—</div>
+        <div class="text-xs opacity-70 mt-0.5">No balances recorded yet</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  <!-- Edit form -->
+  <section class="lg:col-span-2 bg-white border border-slate-200 rounded-lg p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-semibold text-slate-800">Edit</h2>
+      <form method="post" action="/accounts/{{ account.id }}/delete"
+            onsubmit="return confirm('Delete {{ account.name }} and all its balance history? This cannot be undone.');">
+        <button class="text-red-600 hover:underline text-sm">Delete account</button>
+      </form>
+    </div>
+
+    <form method="post" action="/accounts/{{ account.id }}" class="space-y-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Name</label>
+          <input name="name" required value="{{ account.name }}"
+                 class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Category</label>
+          <select name="category_id" class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+            {% for c in categories %}
+              <option value="{{ c.id }}" {% if c.id == account.category_id %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Parent group</label>
+          <select name="parent_id" class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+            <option value="">— (top-level)</option>
+            {% for g in groups %}
+              <option value="{{ g.id }}" {% if g.id == account.parent_id %}selected{% endif %}>{{ g.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Sort order</label>
+          <input name="sort_order" type="number" value="{{ account.sort_order }}"
+                 class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Notes</label>
+        <input name="notes" value="{{ account.notes }}"
+               class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+      </div>
+
+      <fieldset class="border border-slate-200 rounded p-3">
+        <legend class="text-xs font-medium text-slate-600 px-1">Institution &amp; logo</legend>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Domain</label>
+            <input name="institution_domain" value="{{ account.institution_domain or '' }}"
+                   placeholder="e.g. monzo.com"
+                   class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+            <p class="text-xs text-slate-400 mt-1">Logo is fetched from <code>logo.clearbit.com</code>, with a favicon fallback. Children inherit if blank.</p>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Logo URL (override)</label>
+            <input name="logo_url" value="{{ account.logo_url or '' }}"
+                   placeholder="https://..."
+                   class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+            <p class="text-xs text-slate-400 mt-1">Direct URL to an image; takes priority over the domain lookup.</p>
+          </div>
+        </div>
+      </fieldset>
+
+      <div class="flex items-center gap-6">
+        <label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="is_group" {% if account.is_group %}checked{% endif %} class="rounded">
+          Group (folder for child accounts; no balance of its own)
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="is_active" {% if account.is_active %}checked{% endif %} class="rounded">
+          Active
+        </label>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <a href="/accounts" class="px-4 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50">Cancel</a>
+        <button type="submit" class="bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">Save</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- Side column: sparkline + recent values + (if group) children -->
+  <aside class="space-y-6">
+
+    <section class="bg-white border border-slate-200 rounded-lg p-5">
+      <h2 class="font-semibold text-slate-800 mb-3">Trend</h2>
+      {% if history|length >= 2 %}
+        <canvas id="account-spark" height="80"></canvas>
+      {% else %}
+        <p class="text-xs text-slate-400">Need at least two snapshots to draw a trend. Take another one to see the line.</p>
+      {% endif %}
+    </section>
+
+    {% if recent %}
+    <section class="bg-white border border-slate-200 rounded-lg overflow-hidden">
+      <div class="px-5 py-3 border-b border-slate-200">
+        <h2 class="font-semibold text-slate-800">Recent values</h2>
+      </div>
+      <table class="w-full text-sm">
+        <tbody class="divide-y divide-slate-100">
+          {% for r in recent %}
+          <tr>
+            <td class="px-5 py-2 text-xs text-slate-500 whitespace-nowrap">{{ r.date|dt }}</td>
+            <td class="px-5 py-2 text-right num {% if r.amount < 0 %}text-red-600{% endif %}">{{ r.amount|gbp }}</td>
+            <td class="px-5 py-2 text-right text-xs">
+              {% if r.previous is not none %}
+                {% set d = delta(r.amount, r.previous) %}
+                {% if d and d.direction != 'flat' %}
+                  <span class="num {{ 'text-emerald-600' if d.direction == 'up' else 'text-red-600' }}">
+                    {{ '↑' if d.direction == 'up' else '↓' }} {{ d.abs|gbp }}
+                  </span>
+                {% else %}
+                  <span class="text-slate-400">—</span>
+                {% endif %}
+              {% else %}
+                <span class="text-slate-400">first</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    {% if account.is_group and children %}
+    <section class="bg-white border border-slate-200 rounded-lg overflow-hidden">
+      <div class="px-5 py-3 border-b border-slate-200">
+        <h2 class="font-semibold text-slate-800">Sub-accounts</h2>
+      </div>
+      <ul class="divide-y divide-slate-100">
+        {% for child in children %}
+          {% set child_lg = account_logo(child) %}
+          {% set latest = children_latest.get(child.id) %}
+          <li>
+            <a href="/accounts/{{ child.id }}" class="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50">
+              {% if child_lg.primary %}
+                <img src="{{ child_lg.primary }}" alt="" loading="lazy"
+                     class="w-6 h-6 rounded object-contain bg-white border border-slate-200 account-logo shrink-0"
+                     {% if child_lg.fallback %}data-fallback="{{ child_lg.fallback }}"{% endif %}
+                     onerror="logoFallback(this)">
+              {% else %}
+                <div class="w-6 h-6 rounded border border-dashed border-slate-200 shrink-0"></div>
+              {% endif %}
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-medium text-slate-800 truncate">{{ child.name }}</div>
+                {% if child.notes %}<div class="text-xs text-slate-400 truncate">{{ child.notes }}</div>{% endif %}
+              </div>
+              <div class="text-sm num text-slate-700 whitespace-nowrap {% if latest is not none and latest < 0 %}text-red-600{% endif %}">
+                {% if latest is not none %}{{ latest|gbp }}{% else %}<span class="text-slate-400">—</span>{% endif %}
+              </div>
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+  </aside>
+</div>
+
+{% if history|length >= 2 %}
+<script>
+  (function () {
+    const labels = {{ history | map(attribute=0) | map('string') | list | tojson }};
+    const values = {{ history | map(attribute=1) | map('float')   | list | tojson }};
+    const colour = "{{ cat.color }}";
+    const ctx = document.getElementById('account-spark').getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: values,
+          borderColor: colour,
+          backgroundColor: colour + '22',
+          fill: true, tension: 0.25, pointRadius: 2,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { font: { size: 10 } } },
+          y: { ticks: { font: { size: 10 }, callback: v => '£' + Number(v).toLocaleString() } }
+        }
+      }
+    });
+  })();
+</script>
+{% endif %}
+{% endblock %}

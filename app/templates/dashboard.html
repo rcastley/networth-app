@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Net Worth{% endblock %}
+
+{% macro delta_pill(current, previous, invert=False) -%}
+  {% if previous is not none %}
+    {% set d = delta(current, previous) %}
+    {% if d and d.direction != 'flat' %}
+      {% set good = (d.direction == 'up') if not invert else (d.direction == 'down') %}
+      <span class="text-xs num {{ 'text-emerald-600' if good else 'text-red-600' }}">
+        {{ '↑' if d.direction == 'up' else '↓' }} {{ d.abs|gbp }}{% if d.pct is not none %} ({{ '%+.2f' % d.pct }}%){% endif %}
+      </span>
+    {% elif d and d.direction == 'flat' %}
+      <span class="text-xs text-slate-400 num">—</span>
+    {% endif %}
+  {% endif %}
+{%- endmacro %}
+
+{% block content %}
+{% if not snapshot %}
+  <div class="bg-white rounded-lg border border-slate-200 p-8 text-center">
+    <h1 class="text-2xl font-semibold text-slate-900 mb-2">Welcome.</h1>
+    <p class="text-slate-600 mb-6">You haven't created any snapshots yet. Add your first balance reading to start tracking.</p>
+    <a href="/snapshots/new" class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white font-medium px-4 py-2 rounded-md">
+      Create first snapshot
+    </a>
+  </div>
+{% else %}
+<header class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold">Dashboard</h1>
+    <p class="text-sm text-slate-500">
+      Latest snapshot: <span class="font-medium text-slate-700">{{ snapshot.snapshot_date|dt }}</span>
+      {% if previous %}· compared to <span class="font-medium text-slate-700">{{ previous.snapshot_date|dt }}</span>{% endif %}
+      · {{ snaps_count }} snapshot{% if snaps_count != 1 %}s{% endif %} total
+    </p>
+  </div>
+</header>
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+  <div class="bg-white border border-slate-200 rounded-lg p-5">
+    <div class="text-xs uppercase tracking-wide text-slate-500 font-medium">Net Worth</div>
+    <div class="text-3xl font-semibold text-brand-900 mt-1 num">{{ totals.net_worth|gbp }}</div>
+    <div class="mt-1">{{ delta_pill(totals.net_worth, prev_totals.net_worth if prev_totals else none) }}</div>
+  </div>
+  <div class="bg-white border border-slate-200 rounded-lg p-5">
+    <div class="text-xs uppercase tracking-wide text-slate-500 font-medium">Liquid (Cash + Investments)</div>
+    <div class="text-3xl font-semibold text-emerald-700 mt-1 num">{{ totals.liquid|gbp }}</div>
+    <div class="mt-1">{{ delta_pill(totals.liquid, prev_totals.liquid if prev_totals else none) }}</div>
+  </div>
+  <div class="bg-white border border-slate-200 rounded-lg p-5">
+    <div class="text-xs uppercase tracking-wide text-slate-500 font-medium">Net Worth + Aux</div>
+    <div class="text-3xl font-semibold text-slate-700 mt-1 num">{{ totals.net_worth_plus_aux|gbp }}</div>
+    <div class="mt-1">{{ delta_pill(totals.net_worth_plus_aux, prev_totals.net_worth_plus_aux if prev_totals else none) }}</div>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+  <div class="bg-white border border-slate-200 rounded-lg p-5 lg:col-span-2">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-semibold text-slate-800">Trend</h2>
+      <div class="flex gap-1 text-xs">
+        <button data-period="weekly"    class="period-btn px-2 py-1 rounded bg-brand-700 text-white">Weekly</button>
+        <button data-period="monthly"   class="period-btn px-2 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200">Monthly</button>
+        <button data-period="quarterly" class="period-btn px-2 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200">Quarterly</button>
+      </div>
+    </div>
+    <canvas id="trendChart" height="120"></canvas>
+  </div>
+  <div class="bg-white border border-slate-200 rounded-lg p-5">
+    <h2 class="font-semibold text-slate-800 mb-3">Allocation</h2>
+    <canvas id="allocChart" height="200"></canvas>
+  </div>
+</div>
+
+<div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
+  <div class="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+    <h2 class="font-semibold text-slate-800">Category breakdown</h2>
+    <button id="toggle-all-cats" type="button" class="text-xs text-slate-500 hover:text-brand-700">Expand all</button>
+  </div>
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide">
+      <tr>
+        <th class="text-left  px-5 py-2 font-medium">Category / Account</th>
+        <th class="text-right px-5 py-2 font-medium">Value &amp; Δ</th>
+        <th class="text-right px-5 py-2 font-medium">% of Net Worth</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for row in totals.by_category %}
+        {% set cat = row.category %}
+        {% set prev_cat_total = prev_totals.category_map.get(cat.name) if prev_totals else none %}
+        <tr class="cat-row hover:bg-slate-50 cursor-pointer select-none" data-cat="{{ cat.id }}">
+          <td class="px-5 py-2">
+            <svg id="chev-cat-{{ cat.id }}" class="chev inline-block w-3.5 h-3.5 mr-1.5 align-[-1px] text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"></path>
+            </svg>
+            <span class="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle" style="background:{{ cat.color }}"></span>
+            <span class="font-medium">{{ cat.name }}</span>
+            {% if not cat.in_net_worth %}<span class="ml-1 text-xs text-slate-400">(aux)</span>{% endif %}
+            <span class="ml-2 text-xs text-slate-400">{{ row.rows|length }} {% if row.rows|length == 1 %}item{% else %}items{% endif %}</span>
+          </td>
+          <td class="px-5 py-2 text-right">
+            <div class="num {% if row.total < 0 %}text-red-600{% endif %}">{{ row.total|gbp }}</div>
+            <div>{{ delta_pill(row.total, prev_cat_total) }}</div>
+          </td>
+          <td class="px-5 py-2 text-right text-slate-500 num">
+            {% if cat.in_net_worth %}{{ row.total|pct(totals.net_worth) }}{% else %}–{% endif %}
+          </td>
+        </tr>
+        {% for item in row.rows %}
+          {% if item.type == 'group' %}
+            {% set pid = item.parent.id %}
+            <tr class="cat-l1 cat-l1-{{ cat.id }} parent-row hover:bg-slate-50 cursor-pointer hidden bg-slate-50/60" data-parent="{{ pid }}">
+              <td class="px-5 py-1.5 pl-10">
+                <svg id="chev-parent-{{ pid }}" class="chev inline-block w-3 h-3 mr-1 align-[-1px] text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"></path>
+                </svg>
+                <span class="font-medium">{{ item.parent.name }}</span>
+                {% if item.parent.notes %}<span class="ml-1 text-xs text-slate-400">· {{ item.parent.notes }}</span>{% endif %}
+                <span class="ml-2 text-xs text-slate-400">{{ item.children|length }} accounts</span>
+              </td>
+              <td class="px-5 py-1.5 text-right num text-slate-700 {% if item.total < 0 %}text-red-600{% endif %}">{{ item.total|gbp }}</td>
+              <td class="px-5 py-1.5 text-right text-xs text-slate-400 num">
+                {{ item.total|pct(row.total) }} of {{ cat.name }}
+              </td>
+            </tr>
+            {% for ch in item.children %}
+            <tr class="parent-l2 parent-l2-{{ pid }} hidden bg-slate-50/40">
+              <td class="px-5 py-1.5 pl-20 text-slate-600">
+                {{ ch.account.name }}
+                {% if ch.account.notes %}<span class="ml-1 text-xs text-slate-400">· {{ ch.account.notes }}</span>{% endif %}
+              </td>
+              <td class="px-5 py-1.5 text-right num text-slate-600 {% if ch.amount < 0 %}text-red-600{% endif %}">{{ ch.amount|gbp }}</td>
+              <td class="px-5 py-1.5 text-right text-xs text-slate-400 num">
+                {{ ch.amount|pct(item.total) }} of {{ item.parent.name }}
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr class="cat-l1 cat-l1-{{ cat.id }} hidden bg-slate-50/60">
+              <td class="px-5 py-1.5 pl-14 text-slate-700">
+                {{ item.account.name }}
+                {% if item.account.notes %}<span class="ml-1 text-xs text-slate-400">· {{ item.account.notes }}</span>{% endif %}
+              </td>
+              <td class="px-5 py-1.5 text-right num text-slate-700 {% if item.amount < 0 %}text-red-600{% endif %}">{{ item.amount|gbp }}</td>
+              <td class="px-5 py-1.5 text-right text-xs text-slate-400 num">
+                {{ item.amount|pct(row.total) }} of {{ cat.name }}
+              </td>
+            </tr>
+          {% endif %}
+        {% endfor %}
+      {% endfor %}
+      <tr class="bg-slate-50 font-medium">
+        <td class="px-5 py-2.5">Net Worth (excl. aux)</td>
+        <td class="px-5 py-2.5 text-right">
+          <div class="num">{{ totals.net_worth|gbp }}</div>
+          <div>{{ delta_pill(totals.net_worth, prev_totals.net_worth if prev_totals else none) }}</div>
+        </td>
+        <td class="px-5 py-2.5 text-right text-slate-400">100.0%</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+  let trendChart, allocChart;
+
+  async function loadTrend(period) {
+    const res = await fetch(`/api/chart-data?period=${period}`);
+    const data = await res.json();
+    const ctx = document.getElementById('trendChart').getContext('2d');
+    if (trendChart) trendChart.destroy();
+    trendChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: data.labels,
+        datasets: [
+          { label: 'Net Worth', data: data.net_worth, borderColor: '#1D4ED8', backgroundColor: 'rgba(29,78,216,0.08)', fill: true,  tension: 0.25, pointRadius: 3 },
+          { label: 'Liquid',    data: data.liquid,    borderColor: '#059669', backgroundColor: 'rgba(5,150,105,0.05)',  fill: false, tension: 0.25, pointRadius: 3 },
+        ],
+      },
+      options: {
+        responsive: true,
+        scales: { y: { ticks: { callback: v => '£' + v.toLocaleString() } } },
+        plugins: { legend: { position: 'bottom' } }
+      }
+    });
+  }
+
+  function loadAlloc() {
+    const labels = {{ totals.by_category | map(attribute='category.name')         | list | tojson }};
+    const values = {{ totals.by_category | map(attribute='total') | map('float') | list | tojson }};
+    const colors = {{ totals.by_category | map(attribute='category.color')        | list | tojson }};
+    const inNW   = {{ totals.by_category | map(attribute='category.in_net_worth') | list | tojson }};
+    const isLiab = {{ totals.by_category | map(attribute='category.is_liability') | list | tojson }};
+    const fL = [], fV = [], fC = [];
+    for (let i = 0; i < labels.length; i++) {
+      if (inNW[i] && !isLiab[i] && values[i] > 0) {
+        fL.push(labels[i]); fV.push(values[i]); fC.push(colors[i]);
+      }
+    }
+    const ctx = document.getElementById('allocChart').getContext('2d');
+    if (allocChart) allocChart.destroy();
+    allocChart = new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels: fL, datasets: [{ data: fV, backgroundColor: fC }] },
+      options: {
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 10 } },
+          tooltip: { callbacks: { label: c => `${c.label}: £${c.parsed.toLocaleString()}` } }
+        }
+      }
+    });
+  }
+
+  document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.period-btn').forEach(b => {
+        b.classList.remove('bg-brand-700','text-white');
+        b.classList.add('bg-slate-100','text-slate-700');
+      });
+      btn.classList.add('bg-brand-700','text-white');
+      btn.classList.remove('bg-slate-100','text-slate-700');
+      loadTrend(btn.dataset.period);
+    });
+  });
+  loadTrend('weekly');
+  loadAlloc();
+
+  // ---- Hierarchical expand/collapse ----
+  function setCatExpanded(catId, expanded) {
+    document.querySelectorAll('.cat-l1-' + catId).forEach(r => r.classList.toggle('hidden', !expanded));
+    if (!expanded) {
+      // Also collapse any expanded parents under this category
+      document.querySelectorAll('.cat-l1-' + catId + '.parent-row').forEach(p => {
+        const pid = p.dataset.parent;
+        document.querySelectorAll('.parent-l2-' + pid).forEach(r => r.classList.add('hidden'));
+        const chev = document.getElementById('chev-parent-' + pid);
+        if (chev) chev.classList.remove('rotate-90');
+      });
+    }
+    const chev = document.getElementById('chev-cat-' + catId);
+    if (chev) chev.classList.toggle('rotate-90', expanded);
+  }
+
+  function setParentExpanded(parentId, expanded) {
+    document.querySelectorAll('.parent-l2-' + parentId).forEach(r => r.classList.toggle('hidden', !expanded));
+    const chev = document.getElementById('chev-parent-' + parentId);
+    if (chev) chev.classList.toggle('rotate-90', expanded);
+  }
+
+  document.querySelectorAll('.cat-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const id = row.dataset.cat;
+      const anyHidden = document.querySelector('.cat-l1-' + id + '.hidden') !== null;
+      setCatExpanded(id, anyHidden);
+    });
+  });
+
+  document.querySelectorAll('.parent-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const pid = row.dataset.parent;
+      const anyHidden = document.querySelector('.parent-l2-' + pid + '.hidden') !== null;
+      setParentExpanded(pid, anyHidden);
+    });
+  });
+
+  document.getElementById('toggle-all-cats').addEventListener('click', (e) => {
+    const expandAll = e.target.textContent.trim() === 'Expand all';
+    document.querySelectorAll('.cat-row').forEach(row => setCatExpanded(row.dataset.cat, expandAll));
+    if (expandAll) {
+      document.querySelectorAll('.parent-row').forEach(p => setParentExpanded(p.dataset.parent, true));
+    }
+    e.target.textContent = expandAll ? 'Collapse all' : 'Expand all';
+  });
+</script>
+{% endif %}
+{% endblock %}

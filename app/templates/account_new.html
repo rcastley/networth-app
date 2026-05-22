@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}New account · Net Worth{% endblock %}
+
+{% block content %}
+<header class="mb-4">
+  <a href="/accounts" class="text-sm text-slate-500 hover:text-slate-800">← All accounts</a>
+  <h1 class="text-2xl font-semibold mt-1">New account</h1>
+</header>
+
+<section class="bg-white border border-slate-200 rounded-lg p-6 max-w-3xl">
+  <form method="post" action="/accounts" class="space-y-4">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Name</label>
+        <input name="name" required autofocus
+               class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Category</label>
+        <select name="category_id" required class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+          {% for c in categories %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Parent group</label>
+      <select name="parent_id" class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+        <option value="">— (top-level)</option>
+        {% for g in groups %}
+          <option value="{{ g.id }}">{{ g.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Notes</label>
+      <input name="notes" class="w-full border border-slate-300 rounded px-3 py-2 text-sm"
+             placeholder="Brief description (optional)">
+    </div>
+
+    <fieldset class="border border-slate-200 rounded p-3">
+      <legend class="text-xs font-medium text-slate-600 px-1">Institution &amp; logo</legend>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">Domain</label>
+          <input name="institution_domain" placeholder="e.g. monzo.com"
+                 class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+          <p class="text-xs text-slate-400 mt-1">Logo fetched automatically. Leave blank to inherit from parent group.</p>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">Logo URL (override)</label>
+          <input name="logo_url" placeholder="https://..."
+                 class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+          <p class="text-xs text-slate-400 mt-1">Direct image URL; takes priority over the domain lookup.</p>
+        </div>
+      </div>
+    </fieldset>
+
+    <label class="flex items-center gap-2 text-sm">
+      <input type="checkbox" name="is_group" class="rounded">
+      Group (folder for child accounts; no balance of its own)
+    </label>
+
+    <div class="flex justify-end gap-2 pt-2">
+      <a href="/accounts" class="px-4 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50">Cancel</a>
+      <button type="submit" class="bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">Create account</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

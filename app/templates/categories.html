@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Categories · Net Worth{% endblock %}
+
+{% block content %}
+<header class="flex items-center justify-between mb-4">
+  <h1 class="text-2xl font-semibold">Categories</h1>
+</header>
+
+<p class="text-sm text-slate-500 mb-4 max-w-3xl">
+  Categories control how accounts roll up into the dashboard.
+  <strong>In Net Worth</strong> includes the category in the headline "Net Worth" figure (uncheck for things like Life Insurance / Death in Service that you don't own today).
+  <strong>In Liquid</strong> includes it in the "Liquid (Cash + Investments)" total.
+  <strong>Is Liability</strong> means balances are expected to be negative; the allocation pie excludes them.
+</p>
+
+{% for cat in categories %}
+  <form id="cat-form-{{ cat.id }}" method="post" action="/categories/{{ cat.id }}"></form>
+  <form id="cat-del-{{ cat.id }}"  method="post" action="/categories/{{ cat.id }}/delete"
+        onsubmit="return confirm('Delete category {{ cat.name }}? Reassign its accounts first.');"></form>
+{% endfor %}
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+  <section class="lg:col-span-2 bg-white border border-slate-200 rounded-lg overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide">
+        <tr>
+          <th class="text-left px-4 py-2 font-medium">Name</th>
+          <th class="text-center px-4 py-2 font-medium">In Net Worth</th>
+          <th class="text-center px-4 py-2 font-medium">In Liquid</th>
+          <th class="text-center px-4 py-2 font-medium">Liability</th>
+          <th class="text-center px-4 py-2 font-medium">Color</th>
+          <th class="px-4 py-2"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for cat in categories %}
+        <tr>
+          <td class="px-4 py-2">
+            <input form="cat-form-{{ cat.id }}" name="name" value="{{ cat.name }}"
+                   class="w-full border border-transparent hover:border-slate-300 focus:border-brand-500 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-brand-500">
+          </td>
+          <td class="px-4 py-2 text-center">
+            <input form="cat-form-{{ cat.id }}" type="checkbox" name="in_net_worth"
+                   {% if cat.in_net_worth %}checked{% endif %} class="rounded">
+          </td>
+          <td class="px-4 py-2 text-center">
+            <input form="cat-form-{{ cat.id }}" type="checkbox" name="in_liquid"
+                   {% if cat.in_liquid %}checked{% endif %} class="rounded">
+          </td>
+          <td class="px-4 py-2 text-center">
+            <input form="cat-form-{{ cat.id }}" type="checkbox" name="is_liability"
+                   {% if cat.is_liability %}checked{% endif %} class="rounded">
+          </td>
+          <td class="px-4 py-2 text-center">
+            <input form="cat-form-{{ cat.id }}" type="color" name="color" value="{{ cat.color }}"
+                   class="w-10 h-7 cursor-pointer">
+          </td>
+          <td class="px-4 py-2 text-right whitespace-nowrap">
+            <button form="cat-form-{{ cat.id }}" class="text-brand-700 hover:underline text-sm">Save</button>
+            <button form="cat-del-{{ cat.id }}" class="text-red-600 hover:underline text-sm ml-3">Delete</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="bg-white border border-slate-200 rounded-lg p-5 h-fit">
+    <h2 class="font-semibold text-slate-800 mb-3">Add category</h2>
+    <form method="post" action="/categories" class="space-y-3">
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Name</label>
+        <input name="name" required class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+      </div>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="in_net_worth" checked class="rounded"> In Net Worth
+      </label>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="in_liquid" class="rounded"> In Liquid (Cash + Inv)
+      </label>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="is_liability" class="rounded"> Is a Liability
+      </label>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Color</label>
+        <input type="color" name="color" value="#64748B" class="w-12 h-8 cursor-pointer">
+      </div>
+      <button class="w-full bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-3 py-2 rounded">Add</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

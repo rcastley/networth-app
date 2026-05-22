@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Snapshots · Net Worth{% endblock %}
+
+{% block content %}
+<header class="flex items-center justify-between mb-4">
+  <h1 class="text-2xl font-semibold">Snapshots</h1>
+  <a href="/snapshots/new" class="bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-3 py-1.5 rounded">+ New snapshot</a>
+</header>
+
+{% if not snapshots %}
+  <div class="bg-white border border-slate-200 rounded-lg p-8 text-center text-slate-500">
+    No snapshots yet. <a href="/snapshots/new" class="text-brand-700 hover:underline">Create your first one</a>.
+  </div>
+{% else %}
+<div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide">
+      <tr>
+        <th class="text-left px-5 py-2 font-medium">Date</th>
+        <th class="text-right px-5 py-2 font-medium">Net Worth</th>
+        <th class="text-right px-5 py-2 font-medium">Liquid</th>
+        <th class="text-right px-5 py-2 font-medium"># Balances</th>
+        <th class="text-left px-5 py-2 font-medium">Notes</th>
+        <th class="px-5 py-2"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for s in snapshots %}
+        {% set t = totals_for(s) %}
+        <tr>
+          <td class="px-5 py-2 font-medium">{{ s.snapshot_date|dt }}</td>
+          <td class="px-5 py-2 text-right num">{{ t.net_worth|gbp }}</td>
+          <td class="px-5 py-2 text-right num text-slate-600">{{ t.liquid|gbp }}</td>
+          <td class="px-5 py-2 text-right text-slate-500">{{ s.balances|length }}</td>
+          <td class="px-5 py-2 text-slate-500 truncate max-w-xs">{{ s.notes }}</td>
+          <td class="px-5 py-2 text-right whitespace-nowrap">
+            <a href="/snapshots/{{ s.id }}/edit" class="text-brand-700 hover:underline text-sm">Edit</a>
+            <form method="post" action="/snapshots/{{ s.id }}/delete" class="inline ml-3"
+                  onsubmit="return confirm('Delete snapshot {{ s.snapshot_date|dt }}?');">
+              <button class="text-red-600 hover:underline text-sm">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

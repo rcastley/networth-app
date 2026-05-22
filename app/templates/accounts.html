@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Accounts · Net Worth{% endblock %}
+
+{% block content %}
+<header class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold">Accounts</h1>
+    <p class="text-sm text-slate-500 mt-1">Click any card to edit, see history, or manage its children.</p>
+  </div>
+  <a href="/accounts/new" class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-3 py-1.5 rounded-md">
+    + Add account
+  </a>
+</header>
+
+{# ---------- Slim allocation strip ---------- #}
+{% if totals %}
+  {% set positive_cats = [] %}
+  {% for r in totals.by_category %}{% if r.total > 0 %}{% set _ = positive_cats.append(r) %}{% endif %}{% endfor %}
+  {% set positive_sum = namespace(v=0) %}
+  {% for r in positive_cats %}{% set positive_sum.v = positive_sum.v + r.total|float %}{% endfor %}
+
+  {% if positive_cats %}
+  <div class="bg-white border border-slate-200 rounded-lg p-4 mb-6">
+    <div class="flex items-baseline justify-between mb-2 text-sm">
+      <div>
+        <span class="text-xs uppercase tracking-wider text-slate-500 font-medium">Net Worth</span>
+        <span class="ml-2 text-base font-semibold text-slate-900 num">{{ totals.net_worth|gbp }}</span>
+      </div>
+      <div class="text-xs text-slate-500">
+        {{ account_count }} account{{ '' if account_count == 1 else 's' }}
+        {% if latest_date %}<span class="text-slate-300 mx-1">·</span> As of {{ latest_date|dt }}{% endif %}
+      </div>
+    </div>
+    <div class="flex h-2 rounded-full overflow-hidden bg-slate-100" role="img" aria-label="Allocation by category">
+      {% for r in positive_cats %}
+        {% set pct = (r.total|float / positive_sum.v * 100) if positive_sum.v else 0 %}
+        <span style="flex: {{ pct }} 0 0; background: {{ r.category.color }};"
+              title="{{ r.category.name }} — {{ '%.1f' % pct }}%"></span>
+      {% endfor %}
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-5 gap-y-1.5 mt-3 text-xs text-slate-600">
+      {% for r in positive_cats %}
+        {% set pct = (r.total|float / positive_sum.v * 100) if positive_sum.v else 0 %}
+        <div class="flex items-center gap-1.5 min-w-0">
+          <span class="w-2 h-2 rounded-full shrink-0" style="background: {{ r.category.color }}"></span>
+          <span class="truncate">{{ r.category.name }}</span>
+          <span class="ml-auto text-slate-400 num shrink-0">{{ '%.1f' % pct }}%</span>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+{% endif %}
+
+<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+  {% for cat_bucket in grid.categories %}
+    {% set cat = cat_bucket.category %}
+    {% for card in cat_bucket.cards %}
+      {% set acc = card.account %}
+      {% set children = card.children %}
+      {% set lg = account_logo(acc) %}
+      <a href="/accounts/{{ acc.id }}"
+         class="account-card block rounded-xl overflow-hidden shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all">
+        <div class="text-white p-5 relative min-h-[120px] flex flex-col justify-between"
+             style="background: linear-gradient(135deg, {{ cat.color }} 0%, #1e293b 105%);">
+          {% if lg.primary %}
+            <img src="{{ lg.primary }}" alt="" loading="lazy"
+                 class="absolute top-4 right-4 w-12 h-12 rounded-md bg-white/95 p-1.5 shadow object-contain account-logo"
+                 {% if lg.fallback %}data-fallback="{{ lg.fallback }}"{% endif %}
+                 onerror="logoFallback(this)">
+          {% else %}
+            <div class="absolute top-4 right-4 w-12 h-12 rounded-md bg-white/15"></div>
+          {% endif %}
+
+          <div class="pr-16">
+            <div class="text-[10px] uppercase tracking-widest opacity-80 font-medium">{{ cat.name }}</div>
+            <div class="text-lg font-semibold mt-1 leading-tight">{{ acc.name }}</div>
+            {% if acc.is_group %}
+              <div class="text-xs opacity-70 mt-0.5">{{ children|length }} sub-accounts</div>
+            {% elif acc.notes %}
+              <div class="text-xs opacity-70 mt-0.5 truncate">{{ acc.notes }}</div>
+            {% endif %}
+          </div>
+
+          <div class="text-2xl font-bold num">{% if card.current_total is not none %}{{ card.current_total|gbp }}{% else %}<span class="opacity-60">—</span>{% endif %}</div>
+
+          {% if not acc.is_active %}
+            <span class="absolute top-4 left-4 text-[10px] uppercase tracking-wider bg-white/20 px-1.5 py-0.5 rounded">Inactive</span>
+          {% endif %}
+        </div>
+      </a>
+    {% endfor %}
+  {% endfor %}
+</div>
+
+{% if not grid.categories %}
+  <div class="bg-white border border-slate-200 rounded-lg p-8 text-center">
+    <p class="text-slate-600 mb-4">No accounts yet.</p>
+    <a href="/accounts/new" class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">
+      Add your first account
+    </a>
+  </div>
+{% endif %}
+{% endblock %}

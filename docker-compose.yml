@@ -1,0 +1,12 @@
+services:
+  networth:
+    build: .
+    container_name: networth
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      - DATABASE_URL=sqlite:////data/networth.db
+      - TZ=${TZ:-Europe/London}

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Net Worth{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    // Logo fallback chain: primary src -> data-fallback (Google favicons) -> hidden.
+    // Called from inline onerror handlers in account templates.
+    function logoFallback(img) {
+      const fb = img.getAttribute('data-fallback');
+      if (fb && img.src !== fb) {
+        img.removeAttribute('data-fallback');  // only try the fallback once
+        img.src = fb;
+      } else {
+        img.style.display = 'none';
+      }
+    }
+  </script>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
+  <nav class="bg-white border-b border-slate-200 sticky top-0 z-10">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-6">
+      <a href="/" class="font-semibold text-brand-900 text-lg">£ Net Worth</a>
+      <div class="flex gap-4 text-sm text-slate-600">
+        <a href="/" class="hover:text-brand-700">Dashboard</a>
+        <a href="/snapshots" class="hover:text-brand-700">Snapshots</a>
+        <a href="/accounts" class="hover:text-brand-700">Accounts</a>
+        <a href="/categories" class="hover:text-brand-700">Categories</a>
+        <a href="/import" class="hover:text-brand-700">Import / Export</a>
+      </div>
+      <div class="ml-auto flex items-center gap-2">
+        <button id="help-btn" type="button" title="Help (press ?)"
+                aria-label="Open help" aria-controls="help-panel" aria-expanded="false"
+                class="inline-flex items-center justify-center w-8 h-8 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 hover:text-brand-700 text-sm font-semibold">
+          ?
+        </button>
+        <a href="/snapshots/new" class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-3 py-1.5 rounded-md">
+          + New snapshot
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-7xl mx-auto px-4 py-6">
+    {% block content %}{% endblock %}
+  </main>
+
+  {# ---------- Slide-in help panel ---------- #}
+  <div id="help-backdrop"
+       class="fixed inset-0 bg-slate-900/40 opacity-0 pointer-events-none transition-opacity duration-200 z-20"
+       aria-hidden="true"></div>
+
+  {# Build the per-view help block #}
+  {% set _view      = help_views.get(view_id) if view_id else None %}
+  {% set _view_title    = (_view.title if _view else None) %}
+  {% set _view_sections = (_view.sections if _view else []) %}
+  {% set _all_sections  = _view_sections + (help_global or []) %}
+
+  <aside id="help-panel" role="dialog" aria-modal="true" aria-labelledby="help-title"
+         class="fixed top-0 right-0 h-full w-full sm:w-[28rem] bg-white shadow-2xl translate-x-full transition-transform duration-250 ease-out z-30 flex flex-col">
+    <header class="flex items-center justify-between px-5 py-3 border-b border-slate-200 shrink-0">
+      <div>
+        <h2 id="help-title" class="font-semibold text-slate-800">
+          Help{% if _view_title %} <span class="text-slate-400 font-normal">· {{ _view_title|safe }}</span>{% endif %}
+        </h2>
+      </div>
+      <button id="help-close" type="button" aria-label="Close help"
+              class="text-slate-400 hover:text-slate-700 text-xl leading-none px-2">&times;</button>
+    </header>
+
+    {% if _all_sections %}
+    <nav class="px-5 pt-3 pb-2 border-b border-slate-100 text-xs flex flex-wrap gap-x-3 gap-y-1 shrink-0">
+      {% for s in _all_sections %}
+        <a href="#help-{{ s.id }}" class="text-brand-700 hover:underline help-anchor">{{ s.title|safe }}</a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+
+    <div class="flex-1 overflow-y-auto px-5 py-4 space-y-6 text-sm leading-relaxed text-slate-700">
+      {% if _view_sections %}
+        {% for s in _view_sections %}
+          <section id="help-{{ s.id }}" class="scroll-mt-4">
+            <h3 class="text-base font-semibold text-slate-900 mb-2">{{ s.title|safe }}</h3>
+            <div class="space-y-2">{{ s.body|safe }}</div>
+          </section>
+        {% endfor %}
+      {% elif view_id %}
+        <p class="text-slate-500">No help yet for this view. Add a <code>views.{{ view_id }}</code> entry to <code>app/help.yaml</code> and restart.</p>
+      {% else %}
+        <p class="text-slate-500">Pick a page from the nav above to see context-specific help.</p>
+      {% endif %}
+
+      {% if help_global %}
+        <div class="border-t border-slate-200 pt-4 mt-4 space-y-6">
+          <p class="text-xs uppercase tracking-wide text-slate-400 font-medium">General</p>
+          {% for s in help_global %}
+            <section id="help-{{ s.id }}" class="scroll-mt-4">
+              <h3 class="text-base font-semibold text-slate-900 mb-2">{{ s.title|safe }}</h3>
+              <div class="space-y-2">{{ s.body|safe }}</div>
+            </section>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+
+    <footer class="px-5 py-2 border-t border-slate-100 text-xs text-slate-400 shrink-0">
+      Edit <code>app/help.yaml</code> and restart to update this content.
+    </footer>
+  </aside>
+
+  <script>
+    (function () {
+      const btn       = document.getElementById('help-btn');
+      const panel     = document.getElementById('help-panel');
+      const backdrop  = document.getElementById('help-backdrop');
+      const closeBtn  = document.getElementById('help-close');
+      if (!btn || !panel || !backdrop) return;
+
+      function open() {
+        panel.classList.remove('translate-x-full');
+        backdrop.classList.remove('opacity-0', 'pointer-events-none');
+        btn.setAttribute('aria-expanded', 'true');
+        document.body.classList.add('overflow-hidden');
+      }
+      function close() {
+        panel.classList.add('translate-x-full');
+        backdrop.classList.add('opacity-0', 'pointer-events-none');
+        btn.setAttribute('aria-expanded', 'false');
+        document.body.classList.remove('overflow-hidden');
+      }
+      function toggle() {
+        if (panel.classList.contains('translate-x-full')) open(); else close();
+      }
+
+      btn.addEventListener('click', toggle);
+      closeBtn?.addEventListener('click', close);
+      backdrop.addEventListener('click', close);
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') close();
+        // "?" opens help (unless typing in an input/textarea)
+        else if (e.key === '?' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+          e.preventDefault();
+          toggle();
+        }
+      });
+
+      // Smooth scroll for the in-panel TOC links
+      document.querySelectorAll('.help-anchor').forEach(a => {
+        a.addEventListener('click', (e) => {
+          const id = a.getAttribute('href').slice(1);
+          const target = document.getElementById(id);
+          if (target) {
+            e.preventDefault();
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
