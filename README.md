@@ -24,6 +24,41 @@ Then open <http://localhost:8000>. The "?" button in the top-right opens an in-a
 
 First-run behaviour: SQLite DB is created at `./data/networth.db`, Alembic migrations run, and the schema is seeded with 7 starter categories (Cash, Investments, Restricted, Pension, Property, Liability, Life Insurance). No accounts or balances — head to the Accounts page to add your own, then "+ New snapshot" to enter your first set.
 
+## Try a demo
+
+Want to see what a populated dashboard looks like before adding your own accounts? Seed a separate `data/demo.db` with realistic accounts and a month of weekly snapshots. The script always writes to its own file — it never reads `DATABASE_URL` and can't clobber your real data.
+
+```bash
+# In Docker:
+docker compose exec networth python -m app.demo_seed
+
+# Locally:
+python -m app.demo_seed
+```
+
+This creates 10 leaf accounts under 2 groups (Cash / Investments / Pension / Property / Liability / Life Insurance) and 5 weekly snapshots spanning ~28 days, with realistic moves: salary deposit, mortgage payment, market dip and recovery, credit card paid off. Re-run with `--reset` to wipe and re-seed; pass `--db /some/path.db` to seed elsewhere.
+
+To view it, point the app at the demo DB (your real `networth.db` is untouched):
+
+```bash
+# In Docker (set in an .env file alongside docker-compose.yml, or override at the CLI):
+DATABASE_URL=sqlite:////data/demo.db docker compose up
+
+# Locally:
+DATABASE_URL='sqlite:///./data/demo.db' uvicorn app.main:app
+```
+
+Screenshots from the demo dataset:
+
+![Dashboard](docs/screenshots/dashboard.png)
+*Dashboard: headline cards, weekly trend, allocation doughnut, expandable category breakdown.*
+
+![Accounts](docs/screenshots/accounts.png)
+*Accounts: card grid with institution logos, grouped accounts (Main Bank, Vanguard) showing sub-account totals.*
+
+![Snapshots](docs/screenshots/snapshots.png)
+*Snapshots list: every recorded point in time with notes and per-snapshot Net Worth / Liquid totals.*
+
 ## Configuration
 
 Set via `docker-compose.yml` or a `.env` file alongside it:

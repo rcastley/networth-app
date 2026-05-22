@@ -12,9 +12,13 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Override sqlalchemy.url from environment if set
-database_url = os.environ.get("DATABASE_URL", "sqlite:////data/networth.db")
-config.set_main_option("sqlalchemy.url", database_url)
+# Respect a URL the caller set via cfg.set_main_option (e.g. demo_seed.py);
+# otherwise fall back to DATABASE_URL, otherwise the docker-default path.
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option(
+        "sqlalchemy.url",
+        os.environ.get("DATABASE_URL", "sqlite:////data/networth.db"),
+    )
 
 target_metadata = Base.metadata
 
