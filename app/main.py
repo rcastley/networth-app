@@ -669,6 +669,8 @@ async def import_csv(
     to existing account names; unmatched columns are reported but ignored.
     mode = 'skip' to leave existing-date snapshots untouched; 'overwrite' to replace them.
     """
+    if not services.active_leaf_accounts(db):
+        raise HTTPException(400, "Add at least one account before importing snapshots.")
     raw = await file.read()
     text = raw.decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
