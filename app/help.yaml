@@ -58,6 +58,18 @@ views:
         body: |
           <p>Every snapshot you've ever recorded, newest first. Each row shows the date/time, the Net Worth and Liquid totals for that point in time, how many account balances were captured, and any notes you added.</p>
 
+      - id: snap-create
+        title: Creating a snapshot
+        body: |
+          <p>Click <em>+ New snapshot</em> in the top-right. You'll land on a card grid showing every active account, grouped by category.</p>
+          <ol class="list-decimal pl-5 space-y-1">
+            <li>The date &amp; time field defaults to now — change it if you're back-filling history.</li>
+            <li>Click any card to expand it and enter the current balance. You can expand as many as you like; they stay open.</li>
+            <li>Leave a card untouched if you don't want to update it — its previous value carries forward automatically.</li>
+            <li>Hit <em>Save</em>. One snapshot row is created containing every balance you entered.</li>
+          </ol>
+          <p>You need at least one active account before you can create a snapshot — see the Accounts page if you haven't added any yet.</p>
+
       - id: snap-edit
         title: Editing a past snapshot
         body: |
@@ -112,9 +124,19 @@ views:
           <p>Sub-accounts don't appear here; click the parent group's card to manage them.</p>
 
       - id: acc-add
-        title: Adding accounts
+        title: Adding an account
         body: |
-          <p>The <em>+ Add account</em> button in the top-right opens a fresh creation form. Pick a name, category, and (optionally) a parent group. Saving lands you on the new account's detail page.</p>
+          <p>Click <em>+ Add account</em> in the top-right. The form has a handful of fields:</p>
+          <ul class="list-disc pl-5 space-y-1">
+            <li><strong>Name</strong> — what shows on the card and in dropdowns. Keep it short (e.g. <em>Checking</em>, <em>Brokerage ISA</em>).</li>
+            <li><strong>Category</strong> — pick from your existing categories. This drives the colour and which headline figures the balance rolls into.</li>
+            <li><strong>Parent group</strong> — leave as "(top-level)" for a standalone account. Pick a group here to nest this account inside it (e.g. several sub-pots inside one bank's group).</li>
+            <li><strong>Notes</strong> — optional one-liner shown on the snapshot card.</li>
+            <li><strong>Institution domain</strong> — e.g. <code>chase.com</code>. Used to fetch the logo from clearbit.com. Leave blank on a child to inherit from its parent group.</li>
+            <li><strong>Group</strong> checkbox — tick this to make a folder that holds child accounts. Groups have no balance of their own; they sum their children.</li>
+          </ul>
+          <p>If you want to use groups: create the group first (with the Group box ticked), then create the children and pick the group as their parent.</p>
+          <p>Saving lands you on the new account's detail page where you can keep tweaking.</p>
 
       - id: acc-inactive
         title: Inactive vs. deleted
@@ -147,6 +169,19 @@ views:
   categories:
     title: Categories
     sections:
+      - id: cat-add
+        title: Adding a category
+        body: |
+          <p>Use the <em>Add category</em> form on the right. The app ships with seven starter categories (Cash, Investments, Restricted, Pension, Property, Liability, Life Insurance) — feel free to rename, delete, or extend that set to match how you think about your money.</p>
+          <ul class="list-disc pl-5 space-y-1">
+            <li><strong>Name</strong> — anything you like.</li>
+            <li><strong>In Net Worth</strong> — leave checked unless this is a "wider estate" category like life insurance.</li>
+            <li><strong>In Liquid</strong> — check for things you can quickly access (typically just Cash and Investments).</li>
+            <li><strong>Is a Liability</strong> — check for debts. Balances here are expected to be negative, and the allocation pie excludes them.</li>
+            <li><strong>Colour</strong> — used as the swatch on rows and the slice colour in the doughnut.</li>
+          </ul>
+          <p>You can edit any of these on existing categories by changing the values in the table and hitting <em>Save</em> on that row.</p>
+
       - id: cat-flags
         title: What each flag means
         body: |
@@ -202,6 +237,18 @@ views:
 # Use sparingly — content that genuinely belongs everywhere.
 
 global:
+  - id: glb-getting-started
+    title: Getting started
+    body: |
+      <p>If this is a fresh install, here's the shortest path from empty dashboard to a working trend chart:</p>
+      <ol class="list-decimal pl-5 space-y-1">
+        <li><strong>(Optional) Review categories.</strong> Seven starter categories are seeded for you. Go to <em>Categories</em> to rename, delete, or add to them if your setup doesn't fit the defaults.</li>
+        <li><strong>Add your accounts.</strong> Go to <em>Accounts</em> and click <em>+ Add account</em> for each place you hold money. Use groups (tick the Group box) if you want to bundle multiple sub-accounts under one logical "bank".</li>
+        <li><strong>Record your first snapshot.</strong> Click <em>+ New snapshot</em> in the top nav. Tap each account card, type the current balance, then Save.</li>
+        <li><strong>Wait, then snapshot again.</strong> A single snapshot has no deltas and a sparse chart. Come back tomorrow, next week, or whenever — the dashboard becomes meaningful from snapshot two onward.</li>
+      </ol>
+      <p>Tip: use the CSV import on the Import / Export page if you've been tracking balances elsewhere and want to back-fill history.</p>
+
   - id: glb-concepts
     title: Key concepts
     body: |
