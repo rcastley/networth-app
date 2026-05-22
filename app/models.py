@@ -35,7 +35,7 @@ class Account(Base):
     is_active   = Column(Boolean, default=True, nullable=False)
     parent_id   = Column(Integer, ForeignKey("accounts.id"), nullable=True)
     is_group    = Column(Boolean, default=False, nullable=False)
-    institution_domain = Column(String, nullable=True)  # e.g. "monzo.com"
+    institution_domain = Column(String, nullable=True)  # e.g. "chase.com"
     logo_url           = Column(String, nullable=True)  # full URL override
 
     category = relationship("Category", back_populates="accounts")

@@ -6,7 +6,7 @@ Self-hosted personal net-worth tracker. FastAPI + HTMX + Tailwind + SQLite, pack
 
 Track balances across accounts at any cadence — weekly, daily, multiple times a day. Each snapshot stores per-account balances at a point in time, with both date and time so intra-day captures are unambiguous.
 
-The dashboard shows the latest figures with period-over-period deltas, a trend chart (weekly / monthly / quarterly), an allocation doughnut, and a hierarchical category breakdown (category → parent group → leaf account) that expands inline. Accounts can be organised into groups — e.g. all twelve Monzo pots under a single "Monzo" group — so the dashboard and the snapshot entry form mirror how you actually think about your money.
+The dashboard shows the latest figures with period-over-period deltas, a trend chart (weekly / monthly / quarterly), an allocation doughnut, and a hierarchical category breakdown (category → parent group → leaf account) that expands inline. Accounts can be organised into groups — e.g. all the sub-pots of a single bank account under one parent — so the dashboard and the snapshot entry form mirror how you actually think about your money.
 
 CSV import / export is built in for backfilling history and round-tripping to spreadsheets. An in-app help panel (the "?" button in the top-right) walks first-time users through the workflow; the content lives in `app/help.yaml` and can be edited without touching code.
 
@@ -22,7 +22,7 @@ docker compose logs -f networth
 
 Then open <http://localhost:8000>. The "?" button in the top-right opens an in-app guide that explains the workflow in a few minutes.
 
-First-run behaviour: SQLite DB is created at `./data/networth.db`, Alembic migrations run, and the schema is seeded with 7 categories and 25 accounts (Monzo and Trading 212 set up as groups with their pots/accounts as children). No balances — head to "+ New snapshot" to enter your first set.
+First-run behaviour: SQLite DB is created at `./data/networth.db`, Alembic migrations run, and the schema is seeded with 7 starter categories (Cash, Investments, Restricted, Pension, Property, Liability, Life Insurance). No accounts or balances — head to the Accounts page to add your own, then "+ New snapshot" to enter your first set.
 
 ## Configuration
 

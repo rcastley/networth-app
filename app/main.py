@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from .db import Base, engine, get_db, SessionLocal
 from .models import Category, Account, Snapshot, Balance
-from .seed import seed_if_empty, upgrade_existing_data
+from .seed import seed_if_empty
 from . import services
 
 # ---------- App setup ----------
@@ -52,7 +52,6 @@ _run_migrations()
 async def _lifespan(app: FastAPI):
     with SessionLocal() as db:
         seed_if_empty(db)
-        upgrade_existing_data(db)
     yield
 
 

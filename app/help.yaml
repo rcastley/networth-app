@@ -33,7 +33,7 @@ views:
       - id: dash-breakdown
         title: Category breakdown table
         body: |
-          <p>Each category row is clickable — click it to expand and see the accounts within. Group rows (like Monzo or Trading 212) expand a second time to show the individual accounts that make up the group.</p>
+          <p>Each category row is clickable — click it to expand and see the accounts within. Group rows (parent accounts that contain sub-accounts) expand a second time to show the individual accounts that make up the group.</p>
           <p>The <em>Expand all</em> / <em>Collapse all</em> button in the header toggles every level at once.</p>
           <p>The "% of Net Worth" column shows how much of your total worth each category represents. Categories flagged "(aux)" — like Life Insurance — are excluded from this percentage because they aren't part of Net Worth.</p>
 
@@ -76,7 +76,7 @@ views:
       - id: snap-form-cards
         title: How the cards work
         body: |
-          <p>Each top-level account is rendered as a card showing its category, name, last-known balance, and (where set) the institution's logo. Group accounts like Monzo or Trading 212 show the <em>sum</em> of their children's balances.</p>
+          <p>Each top-level account is rendered as a card showing its category, name, last-known balance, and (where set) the institution's logo. Group accounts (parents containing sub-accounts) show the <em>sum</em> of their children's balances.</p>
           <ol class="list-decimal pl-5 space-y-1">
             <li>Click a card to expand it. For a single-account card you get one input; for a group card you get one input per child account.</li>
             <li>Type the new balance(s). Leave any input blank to skip — that account simply won't be recorded on this snapshot.</li>
@@ -98,7 +98,7 @@ views:
             <li>Use a leading minus for liabilities and overdrafts (e.g. <code>-2335.03</code>).</li>
             <li>Currency symbols and commas in the input are tolerated — both <code>£50,000.00</code> and <code>50000</code> work.</li>
             <li>Cards you don't touch carry their previous value forward automatically.</li>
-            <li>To set the logo on a card, edit the account on the Accounts page and enter the institution domain (e.g. <code>monzo.com</code>). Logos are fetched from clearbit.com.</li>
+            <li>To set the logo on a card, edit the account on the Accounts page and enter the institution domain (e.g. <code>chase.com</code>). Logos are fetched from clearbit.com.</li>
           </ul>
 
   # ---------------- Accounts (card grid) ----------------
@@ -109,7 +109,7 @@ views:
         title: Browsing accounts
         body: |
           <p>Every top-level account is a card, grouped under its category. Click a card to drill into its detail page — full edit form, balance history, and (for groups) a list of its sub-accounts you can click into too.</p>
-          <p>Sub-accounts (like the 12 Monzo pots) don't appear here; click the parent group's card to manage them.</p>
+          <p>Sub-accounts don't appear here; click the parent group's card to manage them.</p>
 
       - id: acc-add
         title: Adding accounts
@@ -212,7 +212,7 @@ global:
         </div>
         <div>
           <dt class="font-medium text-slate-800">Account</dt>
-          <dd class="text-slate-600">A single place you hold money (e.g. NS&amp;I, Monzo Personal).</dd>
+          <dd class="text-slate-600">A single place you hold money (e.g. a current account or brokerage).</dd>
         </div>
         <div>
           <dt class="font-medium text-slate-800">Group</dt>
