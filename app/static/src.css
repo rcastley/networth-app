@@ -1,11 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ---------- Design tokens ---------- */
+:root {
+  --font-display: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+  --font-body:    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  --accent:       #1D4ED8;   /* brand-700 */
+  --accent-hover: #1E3A8A;   /* brand-900 */
+  --accent-soft:  #DBEAFE;   /* brand-100 */
+
+  --surface:      #FFFFFF;
+  --surface-2:    #F8FAFC;   /* slate-50 */
+  --surface-3:    #F1F5F9;   /* slate-100 */
+  --border:       #E2E8F0;   /* slate-200 */
+
+  --text:         #0F172A;   /* slate-900 */
+  --text-muted:   #64748B;   /* slate-500 */
+
+  --good:         #059669;   /* emerald-600 */
+  --bad:          #DC2626;   /* red-600 */
+}
+
 @layer base {
+  html {
+    /* Soft top-down gradient on the page background — escapes flat-SaaS feel */
+    background: linear-gradient(180deg, #F8FAFC 0%, #EEF2F7 100%);
+    background-attachment: fixed;
+  }
   body {
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
-                 Roboto, Helvetica, Arial, sans-serif;
+    font-family: var(--font-body);
+  }
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
   }
 }
 
@@ -15,5 +46,110 @@
   }
   .currency-input::placeholder {
     color: #9CA3AF;
+  }
+
+  /* ---------- £ wordmark ---------- */
+  .wordmark {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    color: var(--text);
+  }
+  .wordmark__mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 0.5rem;
+    background: var(--accent);
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 700;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.15), inset 0 1px 0 rgba(255,255,255,0.2);
+  }
+
+  /* ---------- Segmented control ---------- */
+  .segmented {
+    display: inline-flex;
+    padding: 2px;
+    background: var(--surface-3);
+    border-radius: 8px;
+    gap: 2px;
+  }
+  .segmented button {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    transition: background 120ms ease, color 120ms ease;
+  }
+  .segmented button:hover { color: var(--text); }
+  .segmented button.active {
+    background: var(--surface);
+    color: var(--accent);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  }
+
+  /* When the insight widget is collapsed, hide the panels but keep the tab strip */
+  #insight-widget.collapsed .insight-panel { display: none !important; }
+
+  /* ---------- Standard underline tabs ---------- */
+  .insight-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.625rem 1rem;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 120ms ease, border-color 120ms ease;
+  }
+  .insight-tab:hover { color: var(--text); }
+  .insight-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  /* ---------- Toasts ---------- */
+  .toast {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    z-index: 60;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.6rem 0.9rem 0.6rem 0.75rem;
+    border-radius: 0.625rem;
+    background: var(--text);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.25), 0 2px 6px rgba(15, 23, 42, 0.15);
+    animation: toast-in 180ms ease-out;
+  }
+  .toast--success { background: var(--good); }
+  .toast--error   { background: var(--bad); }
+  .toast--leaving { animation: toast-out 200ms ease-in forwards; }
+  .toast button {
+    margin-left: 0.25rem;
+    opacity: 0.7;
+    transition: opacity 120ms;
+  }
+  .toast button:hover { opacity: 1; }
+  @keyframes toast-in {
+    from { transform: translateY(12px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  @keyframes toast-out {
+    from { transform: translateY(0);    opacity: 1; }
+    to   { transform: translateY(12px); opacity: 0; }
   }
 }

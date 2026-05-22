@@ -6,7 +6,9 @@ Self-hosted personal net-worth tracker. FastAPI + HTMX + Tailwind + SQLite, pack
 
 Track balances across accounts at any cadence — weekly, daily, multiple times a day. Each snapshot stores per-account balances at a point in time, with both date and time so intra-day captures are unambiguous.
 
-The dashboard shows the latest figures with period-over-period deltas, a trend chart (weekly / monthly / quarterly), an allocation doughnut, and a hierarchical category breakdown (category → parent group → leaf account) that expands inline. Accounts can be organised into groups — e.g. all the sub-pots of a single bank account under one parent — so the dashboard and the snapshot entry form mirror how you actually think about your money.
+The Accounts page is the home view: headline cards (Net Worth / Liquid / Net Worth + Aux) with per-card sparklines and period-over-period deltas, a collapsible tabbed insight widget (Trend chart + allocation doughnut on one tab; hierarchical category breakdown with deltas on the other), and a card grid of every top-level account — each card showing its current balance, change since the previous snapshot, and a red badge on group cards indicating sub-account count. Accounts can be organised into groups — e.g. all the sub-pots of a single bank account under one parent — so this page and the snapshot entry form mirror how you actually think about your money.
+
+Clicking any account card opens its detail page with two tabs: **Summary** (trend chart, recent values, sub-accounts for groups) and **Edit** (account fields, institution domain for the logo, delete). Saving, deleting, or creating any account / category / snapshot shows a toast confirmation in the bottom-right.
 
 CSV import / export is built in for backfilling history and round-tripping to spreadsheets. An in-app help panel (the "?" button in the top-right) walks first-time users through the workflow; the content lives in `app/help.yaml` and can be edited without touching code.
 
@@ -26,7 +28,7 @@ First-run behaviour: SQLite DB is created at `./data/networth.db`, Alembic migra
 
 ## Try a demo
 
-Want to see what a populated dashboard looks like before adding your own accounts? Seed a separate `data/demo.db` with realistic accounts and a month of weekly snapshots. The script always writes to its own file — it never reads `DATABASE_URL` and can't clobber your real data.
+Want to see what a populated home page looks like before adding your own accounts? Seed a separate `data/demo.db` with realistic accounts and a month of weekly snapshots. The script always writes to its own file — it never reads `DATABASE_URL` and can't clobber your real data.
 
 ```bash
 # In Docker:
@@ -50,17 +52,14 @@ DATABASE_URL='sqlite:///./data/demo.db' uvicorn app.main:app
 
 Screenshots from the demo dataset:
 
-![Dashboard](docs/screenshots/dashboard.png)
-*Dashboard: headline cards, weekly trend, allocation doughnut, expandable category breakdown.*
-
-![Accounts](docs/screenshots/accounts.png)
-*Accounts: card grid with institution logos, grouped accounts (Main Bank, Vanguard) showing sub-account totals.*
+![Home](docs/screenshots/home.png)
+*Home: three headline cards with sparklines and deltas, a collapsible Trend / Breakdown insight widget, and a card grid of every top-level account showing per-card deltas (red badge on group cards = sub-account count).*
 
 ![Account detail](docs/screenshots/account-detail.png)
-*Account detail (clicking the Main Bank card): hero summary with logo, full edit form, sparkline trend, recent-values table with deltas, and a sub-accounts panel for group accounts.*
+*Account detail (clicking the Main Bank card): hero summary with logo, then a Summary / Edit tab pair. Summary shows trend chart, scrollable recent values, and (for groups) sub-accounts.*
 
 ![Snapshots](docs/screenshots/snapshots.png)
-*Snapshots list: every recorded point in time with notes and per-snapshot Net Worth / Liquid totals.*
+*Snapshots list: every recorded point in time with notes, per-snapshot Net Worth / Liquid totals, and icon-only edit / delete actions per row.*
 
 ## Configuration
 
@@ -82,14 +81,14 @@ DATABASE_URL=sqlite:///$(pwd)/dev.db uvicorn app.main:app --reload
 
 `npm run watch:css` rebuilds the CSS file on template edits.
 
-In-app help is context-aware — each page (Dashboard, Snapshots, Accounts, etc.) gets its own set of sections, plus a shared "General" block that appears on every view. Content lives in `app/help.yaml`:
+In-app help is context-aware — each page (Accounts, Snapshots, Categories, etc.) gets its own set of sections, plus a shared "General" block that appears on every view. Content lives in `app/help.yaml`:
 
 ```yaml
 views:
-  dashboard:
-    title: Dashboard           # rendered as "Help · Dashboard" in the panel header
+  home:
+    title: Accounts            # rendered as "Help · Accounts" in the panel header
     sections:
-      - id: dash-headlines
+      - id: home-headlines
         title: Headline cards
         body: |
           <p>HTML body — write whatever's easiest to author.</p>
@@ -126,6 +125,8 @@ Current migrations:
 - `0001` — initial schema (categories, accounts, snapshots, balances)
 - `0002` — adds `parent_id` and `is_group` to accounts (account grouping)
 - `0003` — `snapshot_date` becomes `DateTime` and drops the unique constraint (multiple snapshots per day allowed)
+- `0004` — adds `institution_domain` and `logo_url` columns to accounts (institution logos)
+- `0005` — adds hot-path indexes on `snapshots.snapshot_date` and `balances.account_id`
 
 To create a new migration after a model change:
 
@@ -137,27 +138,30 @@ docker compose restart networth
 
 ## Routes
 
-- `/` — Dashboard (headlines, deltas, trend, allocation, expandable category breakdown)
+- `/` — Accounts home (headlines + sparklines, deltas, collapsible Trend / Breakdown widget, card grid)
+- `/accounts/new` — add account
+- `/accounts/{id}` — account detail (Summary + Edit tabs, delete)
 - `/snapshots` — list, edit, delete
 - `/snapshots/new` — new snapshot (date defaults to right-now, balances pre-filled from previous snapshot)
-- `/accounts` — inline edit, set parent group, mark as group, add new
-- `/categories` — inline edit + add
+- `/categories` — inline edit + add (with color swatches alongside a native picker)
 - `/import` — CSV import / export
 - `/export` — direct CSV download
 - `/api/chart-data?period=weekly|monthly|quarterly` — JSON for the trend chart
 - `/healthz` — container health check
 
-Errors are content-negotiated: browsers get a styled HTML error page with Back / Dashboard buttons; clients sending `Accept: application/json` (or hitting any `/api/*` endpoint) get JSON.
+Errors are content-negotiated: browsers get a styled HTML error page with Back / Home buttons; clients sending `Accept: application/json` (or hitting any `/api/*` endpoint) get JSON. Successful mutations (save / create / delete) redirect with a `?toast=...&kind=success` query param that `base.html` renders as a bottom-right toast and then strips from the URL via `history.replaceState`.
 
 ## Stack
 
 - **FastAPI** — web framework
 - **SQLAlchemy 2.0** + **Alembic** — ORM and migrations
 - **SQLite** — single-file database (sized for hundreds of years of weekly snapshots)
-- **Jinja2** — server-rendered templates
+- **Jinja2** — server-rendered templates (with shared macros in `app/templates/partials/`)
 - **HTMX** — light interactivity without an SPA
-- **Tailwind CSS** (built at image-build time, no runtime CDN) — styling
-- **Chart.js** — line + doughnut charts
+- **Tailwind CSS** (built at image-build time, no runtime CDN) — styling, plus a small CSS-variable design-token layer in `app/static/src.css`
+- **Chart.js** — line + doughnut charts (trend, allocation, headline sparklines, account-detail sparkline)
+- **Material Symbols Outlined** (Google Fonts, filtered to the ~16 icons actually used) — UI iconography
+- **Bricolage Grotesque** (Google Fonts) — display font for headings and the `£` wordmark
 - **PyYAML** — loads in-app help content from `app/help.yaml`
 
 Total Python deps: 7. Runs comfortably in <100 MB of RAM.

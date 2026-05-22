@@ -3,7 +3,10 @@
 
 {% block content %}
 <header class="mb-4">
-  <a href="/accounts" class="text-sm text-slate-500 hover:text-slate-800">← All accounts</a>
+  <a href="/" class="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
+    <span class="material-symbols-outlined text-base">arrow_circle_left</span>
+    All accounts
+  </a>
   <h1 class="text-2xl font-semibold mt-1">New account</h1>
 </header>
 
@@ -65,8 +68,14 @@
     </label>
 
     <div class="flex justify-end gap-2 pt-2">
-      <a href="/accounts" class="px-4 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50">Cancel</a>
-      <button type="submit" class="bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">Create account</button>
+      <a href="/" class="inline-flex items-center gap-1 px-4 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50">
+        <span class="material-symbols-outlined text-lg">cancel</span>
+        Cancel
+      </a>
+      <button type="submit" class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">
+        <span class="material-symbols-outlined text-lg">add_circle</span>
+        Create account
+      </button>
     </div>
   </form>
 </section>

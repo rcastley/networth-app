@@ -15,14 +15,14 @@
 
 views:
 
-  # ---------------- Dashboard ----------------
-  dashboard:
-    title: Dashboard
+  # ---------------- Home (accounts + insights) ----------------
+  home:
+    title: Accounts
     sections:
-      - id: dash-headlines
+      - id: home-headlines
         title: Headline cards
         body: |
-          <p>The three big cards at the top:</p>
+          <p>The three cards at the top:</p>
           <ul class="list-disc pl-5 space-y-1">
             <li><strong>Net Worth</strong> — sum of all categories where "In Net Worth" is checked on the Categories page.</li>
             <li><strong>Liquid</strong> — categories marked "In Liquid". By default this is Cash + Investments.</li>
@@ -30,23 +30,46 @@ views:
           </ul>
           <p>The small green/red value beneath each headline is the change since your <em>previous</em> snapshot. Green = good for you, red = bad. For categories marked as liabilities, the sign convention works out automatically — paying down debt shows green even though the stored amount becomes "less negative".</p>
 
-      - id: dash-breakdown
-        title: Category breakdown table
+      - id: home-insights
+        title: Trend / Allocation / Breakdown tabs
         body: |
-          <p>Each category row is clickable — click it to expand and see the accounts within. Group rows (parent accounts that contain sub-accounts) expand a second time to show the individual accounts that make up the group.</p>
-          <p>The <em>Expand all</em> / <em>Collapse all</em> button in the header toggles every level at once.</p>
-          <p>The "% of Net Worth" column shows how much of your total worth each category represents. Categories flagged "(aux)" — like Life Insurance — are excluded from this percentage because they aren't part of Net Worth.</p>
+          <p>The tabbed widget below the headlines packs three views into one:</p>
+          <ul class="list-disc pl-5 space-y-1">
+            <li><strong>Trend</strong> — line chart of Net Worth and Liquid over time. Toggle <em>Weekly</em> (all snapshots), <em>Monthly</em> (latest per month), or <em>Quarterly</em> (latest per quarter) in the chart header.</li>
+            <li><strong>Allocation</strong> — doughnut chart of the latest split across categories that count toward Net Worth. Liabilities and aux categories are excluded so the slices add to 100%.</li>
+            <li><strong>Breakdown</strong> — hierarchical table (category → group → leaf). Click any row to expand. Shows per-row deltas and "% of Net Worth".</li>
+          </ul>
 
-      - id: dash-charts
-        title: Trend & allocation charts
+      - id: home-cards
+        title: Account cards
         body: |
-          <p>The trend chart shows your Net Worth and Liquid totals over time. Toggle between <em>Weekly</em> (all snapshots), <em>Monthly</em> (the latest snapshot per month), and <em>Quarterly</em> (the latest per quarter) using the buttons in the chart header.</p>
-          <p>The allocation doughnut shows the latest split across categories that count toward Net Worth. Liabilities and aux categories are excluded so the slices add to 100%.</p>
+          <p>Every top-level account is a card, grouped under its category. Each card shows the latest balance and the change since the previous snapshot. Click a card to drill into its detail page — full edit form, balance history, and (for groups) a list of its sub-accounts.</p>
+          <p>Sub-accounts don't appear on this page; click the parent group's card to manage them.</p>
 
-      - id: dash-next
+      - id: home-add
+        title: Adding an account
+        body: |
+          <p>Click <em>+ Add account</em> in the top-right. The form has a handful of fields:</p>
+          <ul class="list-disc pl-5 space-y-1">
+            <li><strong>Name</strong> — what shows on the card and in dropdowns. Keep it short (e.g. <em>Checking</em>, <em>Brokerage ISA</em>).</li>
+            <li><strong>Category</strong> — pick from your existing categories. This drives the colour and which headline figures the balance rolls into.</li>
+            <li><strong>Parent group</strong> — leave as "(top-level)" for a standalone account. Pick a group here to nest this account inside it (e.g. several sub-pots inside one bank's group).</li>
+            <li><strong>Notes</strong> — optional one-liner shown on the snapshot card.</li>
+            <li><strong>Institution domain</strong> — e.g. <code>chase.com</code>. Used to fetch the logo from clearbit.com. Leave blank on a child to inherit from its parent group.</li>
+            <li><strong>Group</strong> checkbox — tick this to make a folder that holds child accounts. Groups have no balance of their own; they sum their children.</li>
+          </ul>
+          <p>If you want to use groups: create the group first (with the Group box ticked), then create the children and pick the group as their parent.</p>
+
+      - id: home-inactive
+        title: Inactive vs. deleted
+        body: |
+          <p>On any account's detail page, untick <em>Active</em> to hide it from new snapshot forms while keeping its history intact. Useful when you close an account but want to keep historical balances visible on the trend chart.</p>
+          <p><strong>Delete</strong> removes the account <em>and</em> all its historical balances permanently. Almost always you want "inactive" instead.</p>
+
+      - id: home-next
         title: What to do next
         body: |
-          <p>If you've only got one snapshot, the trend chart will look sparse and there'll be no deltas yet. Add a second snapshot tomorrow, next week, or whenever — even minutes later if you're testing — and the dashboard becomes meaningful.</p>
+          <p>If you've only got one snapshot, the trend chart will look sparse and there'll be no deltas yet. Add a second snapshot tomorrow, next week, or whenever — even minutes later if you're testing — and this page becomes meaningful.</p>
           <p>Click <em>+ New snapshot</em> in the top-right to record a new point in time.</p>
 
   # ---------------- Snapshots list ----------------
@@ -74,7 +97,7 @@ views:
         title: Editing a past snapshot
         body: |
           <p>Click <em>Edit</em> on any row to re-open the snapshot in a form with all the previously-entered values. Useful for fixing a typo or filling in a balance you skipped at the time.</p>
-          <p>Saving an edit updates the existing snapshot — the dashboard and trend charts will reflect the change immediately.</p>
+          <p>Saving an edit updates the existing snapshot — the headlines and trend chart will reflect the change immediately.</p>
 
       - id: snap-delete
         title: Deleting a snapshot
@@ -112,37 +135,6 @@ views:
             <li>Cards you don't touch carry their previous value forward automatically.</li>
             <li>To set the logo on a card, edit the account on the Accounts page and enter the institution domain (e.g. <code>chase.com</code>). Logos are fetched from clearbit.com.</li>
           </ul>
-
-  # ---------------- Accounts (card grid) ----------------
-  accounts:
-    title: Accounts
-    sections:
-      - id: acc-grid
-        title: Browsing accounts
-        body: |
-          <p>Every top-level account is a card, grouped under its category. Click a card to drill into its detail page — full edit form, balance history, and (for groups) a list of its sub-accounts you can click into too.</p>
-          <p>Sub-accounts don't appear here; click the parent group's card to manage them.</p>
-
-      - id: acc-add
-        title: Adding an account
-        body: |
-          <p>Click <em>+ Add account</em> in the top-right. The form has a handful of fields:</p>
-          <ul class="list-disc pl-5 space-y-1">
-            <li><strong>Name</strong> — what shows on the card and in dropdowns. Keep it short (e.g. <em>Checking</em>, <em>Brokerage ISA</em>).</li>
-            <li><strong>Category</strong> — pick from your existing categories. This drives the colour and which headline figures the balance rolls into.</li>
-            <li><strong>Parent group</strong> — leave as "(top-level)" for a standalone account. Pick a group here to nest this account inside it (e.g. several sub-pots inside one bank's group).</li>
-            <li><strong>Notes</strong> — optional one-liner shown on the snapshot card.</li>
-            <li><strong>Institution domain</strong> — e.g. <code>chase.com</code>. Used to fetch the logo from clearbit.com. Leave blank on a child to inherit from its parent group.</li>
-            <li><strong>Group</strong> checkbox — tick this to make a folder that holds child accounts. Groups have no balance of their own; they sum their children.</li>
-          </ul>
-          <p>If you want to use groups: create the group first (with the Group box ticked), then create the children and pick the group as their parent.</p>
-          <p>Saving lands you on the new account's detail page where you can keep tweaking.</p>
-
-      - id: acc-inactive
-        title: Inactive vs. deleted
-        body: |
-          <p>Untick <em>Active</em> on the detail page to hide an account from new snapshot forms while keeping its history intact. Useful when you close an account but want to keep the historical balances visible on the dashboard charts.</p>
-          <p><strong>Delete</strong> removes the account <em>and</em> all its historical balances permanently. Almost always you want "inactive" instead.</p>
 
   # ---------------- Account detail page ----------------
   account_detail:
@@ -196,7 +188,7 @@ views:
             </div>
             <div>
               <dt class="font-medium text-slate-800">Is a Liability</dt>
-              <dd class="text-slate-600">Flags the category as a liability (e.g. Mortgage). The allocation doughnut on the dashboard excludes liability categories so the slices add to 100%.</dd>
+              <dd class="text-slate-600">Flags the category as a liability (e.g. Mortgage). The allocation doughnut on the Accounts page excludes liability categories so the slices add to 100%.</dd>
             </div>
             <div>
               <dt class="font-medium text-slate-800">Colour</dt>
@@ -240,12 +232,12 @@ global:
   - id: glb-getting-started
     title: Getting started
     body: |
-      <p>If this is a fresh install, here's the shortest path from empty dashboard to a working trend chart:</p>
+      <p>If this is a fresh install, here's the shortest path from empty home page to a working trend chart:</p>
       <ol class="list-decimal pl-5 space-y-1">
         <li><strong>(Optional) Review categories.</strong> Seven starter categories are seeded for you. Go to <em>Categories</em> to rename, delete, or add to them if your setup doesn't fit the defaults.</li>
         <li><strong>Add your accounts.</strong> Go to <em>Accounts</em> and click <em>+ Add account</em> for each place you hold money. Use groups (tick the Group box) if you want to bundle multiple sub-accounts under one logical "bank".</li>
         <li><strong>Record your first snapshot.</strong> Click <em>+ New snapshot</em> in the top nav. Tap each account card, type the current balance, then Save.</li>
-        <li><strong>Wait, then snapshot again.</strong> A single snapshot has no deltas and a sparse chart. Come back tomorrow, next week, or whenever — the dashboard becomes meaningful from snapshot two onward.</li>
+        <li><strong>Wait, then snapshot again.</strong> A single snapshot has no deltas and a sparse chart. Come back tomorrow, next week, or whenever — the page becomes meaningful from snapshot two onward.</li>
       </ol>
       <p>Tip: use the CSV import on the Import / Export page if you've been tracking balances elsewhere and want to back-fill history.</p>
 

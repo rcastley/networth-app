@@ -7,9 +7,12 @@
   <div class="bg-white border border-slate-200 rounded-lg p-8 text-center">
     <h1 class="text-2xl font-semibold text-slate-900 mb-2">No accounts yet</h1>
     <p class="text-slate-600 mb-6">A snapshot captures the balance of each account at a point in time, so you need at least one account before you can record one.</p>
-    <a href="/accounts/new" class="inline-block bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">Add your first account</a>
+    <a href="/accounts/new" class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">
+      <span class="material-symbols-outlined text-lg">add_circle</span>
+      Add your first account
+    </a>
     <div class="mt-4">
-      <a href="/accounts" class="text-sm text-brand-700 hover:underline">or browse the Accounts page</a>
+      <a href="/" class="text-sm text-brand-700 hover:underline">or browse the Accounts page</a>
     </div>
   </div>
 </div>
@@ -20,7 +23,10 @@
   <div class="bg-white border border-slate-200 rounded-lg p-5 sticky top-16 z-10 shadow-sm">
     <div class="flex items-center justify-between gap-4 mb-3">
       <h1 class="text-xl font-semibold">{{ form_title }}</h1>
-      <button type="submit" class="bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">{{ submit_label }}</button>
+      <button type="submit" class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">
+        <span class="material-symbols-outlined text-lg">check_circle</span>
+        {{ submit_label }}
+      </button>
     </div>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div>
@@ -64,7 +70,7 @@
 
               {% if lg.primary %}
                 <img src="{{ lg.primary }}" alt="" loading="lazy"
-                     class="absolute top-4 right-4 w-12 h-12 rounded-md bg-white/95 p-1.5 shadow object-contain account-logo"
+                     class="absolute top-4 right-4 w-12 h-12 rounded-md bg-white/95 p-1.5 shadow object-scale-down account-logo"
                      {% if lg.fallback %}data-fallback="{{ lg.fallback }}"{% endif %}
                      onerror="logoFallback(this)">
               {% else %}
@@ -101,7 +107,7 @@
                     <div class="flex items-center gap-2 min-w-0 flex-1">
                       {% if child_lg.primary %}
                         <img src="{{ child_lg.primary }}" alt="" loading="lazy"
-                             class="account-logo w-5 h-5 rounded object-contain bg-white border border-slate-200 shrink-0"
+                             class="account-logo w-5 h-5 rounded object-scale-down bg-white border border-slate-200 shrink-0"
                              {% if child_lg.fallback %}data-fallback="{{ child_lg.fallback }}"{% endif %}
                              onerror="logoFallback(this)">
                       {% else %}
@@ -146,8 +152,14 @@
       Empty inputs are skipped on save. Use a leading minus for liabilities and overdrafts.
     </div>
     <div class="flex gap-2">
-      <a href="/snapshots" class="px-4 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50">Cancel</a>
-      <button type="submit" class="bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">{{ submit_label }}</button>
+      <a href="/snapshots" class="inline-flex items-center gap-1 px-4 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50">
+        <span class="material-symbols-outlined text-lg">cancel</span>
+        Cancel
+      </a>
+      <button type="submit" class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">
+        <span class="material-symbols-outlined text-lg">check_circle</span>
+        {{ submit_label }}
+      </button>
     </div>
   </div>
 </form>

@@ -1,5 +1,5 @@
 """Populate a SEPARATE demo SQLite database with realistic accounts and
-snapshots so a new user can see what a populated dashboard looks like.
+snapshots so a new user can see what a populated home page looks like.
 
 The seed deliberately ignores the app's DATABASE_URL — it always writes
 to a dedicated demo file so it cannot clobber real data. Default path:

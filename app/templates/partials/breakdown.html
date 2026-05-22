@@ -1,0 +1,93 @@
+{# Hierarchical category → group → leaf breakdown table with deltas and
+   "% of Net Worth" column. Expects `totals` and `prev_totals` in context.
+   Wrap in the panel that controls its visibility (e.g. a tabbed widget).
+   Expand/collapse JS hooks: .cat-row[data-cat], .parent-row[data-parent],
+   #toggle-all-cats. #}
+{% import 'partials/_macros.html' as m %}
+
+<div class="px-5 py-2 border-b border-slate-200 flex items-center justify-end shrink-0">
+  <button id="toggle-all-cats" type="button" class="text-xs text-slate-500 hover:text-brand-700">Expand all</button>
+</div>
+<div class="overflow-y-auto flex-1 min-h-0">
+<table class="w-full text-sm">
+  <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide sticky top-0 z-10">
+    <tr>
+      <th class="text-left  px-5 py-2 font-medium">Category / Account</th>
+      <th class="text-right px-5 py-2 font-medium">Value &amp; Δ</th>
+      <th class="text-right px-5 py-2 font-medium">% of Net Worth</th>
+    </tr>
+  </thead>
+  <tbody class="divide-y divide-slate-100">
+    {% for row in totals.by_category %}
+      {% set cat = row.category %}
+      {% set prev_cat_total = prev_totals.category_map.get(cat.name) if prev_totals else none %}
+      <tr class="cat-row hover:bg-slate-50 cursor-pointer select-none" data-cat="{{ cat.id }}">
+        <td class="px-5 py-2">
+          <span id="chev-cat-{{ cat.id }}" class="material-symbols-outlined chev text-base text-slate-400 transition-transform mr-1">chevron_right</span>
+          <span class="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle" style="background:{{ cat.color }}"></span>
+          <span class="font-medium">{{ cat.name }}</span>
+          {% if not cat.in_net_worth %}<span class="ml-1 text-xs text-slate-400">(aux)</span>{% endif %}
+          <span class="ml-2 text-xs text-slate-400">{{ row.rows|length }} {% if row.rows|length == 1 %}item{% else %}items{% endif %}</span>
+        </td>
+        <td class="px-5 py-2 text-right">
+          <div class="num {% if row.total < 0 %}text-red-600{% endif %}">{{ row.total|gbp }}</div>
+          <div>{{ m.delta_pill(row.total, prev_cat_total, invert=cat.is_liability) }}</div>
+        </td>
+        <td class="px-5 py-2 text-right text-slate-500 num">
+          {% if cat.in_net_worth %}{{ row.total|pct(totals.net_worth) }}{% else %}–{% endif %}
+        </td>
+      </tr>
+      {% for item in row.rows %}
+        {% if item.type == 'group' %}
+          {% set pid = item.parent.id %}
+          <tr class="cat-l1 cat-l1-{{ cat.id }} parent-row hover:bg-slate-50 cursor-pointer hidden bg-slate-50/60" data-parent="{{ pid }}">
+            <td class="px-5 py-1.5 pl-10">
+              <span id="chev-parent-{{ pid }}" class="material-symbols-outlined chev text-sm text-slate-400 transition-transform mr-1">chevron_right</span>
+              <span class="font-medium">{{ item.parent.name }}</span>
+              {% if item.parent.notes %}<span class="ml-1 text-xs text-slate-400">· {{ item.parent.notes }}</span>{% endif %}
+              <span class="ml-2 text-xs text-slate-400">{{ item.children|length }} accounts</span>
+            </td>
+            <td class="px-5 py-1.5 text-right num text-slate-700 {% if item.total < 0 %}text-red-600{% endif %}">{{ item.total|gbp }}</td>
+            <td class="px-5 py-1.5 text-right text-xs text-slate-400 num">
+              {{ item.total|pct(row.total) }} of {{ cat.name }}
+            </td>
+          </tr>
+          {% for ch in item.children %}
+          <tr class="parent-l2 parent-l2-{{ pid }} hidden bg-slate-50/40">
+            <td class="px-5 py-1.5 pl-20 text-slate-600">
+              {{ ch.account.name }}
+              {% if ch.account.notes %}<span class="ml-1 text-xs text-slate-400">· {{ ch.account.notes }}</span>{% endif %}
+            </td>
+            <td class="px-5 py-1.5 text-right num text-slate-600 {% if ch.amount < 0 %}text-red-600{% endif %}">{{ ch.amount|gbp }}</td>
+            <td class="px-5 py-1.5 text-right text-xs text-slate-400 num">
+              {{ ch.amount|pct(item.total) }} of {{ item.parent.name }}
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr class="cat-l1 cat-l1-{{ cat.id }} hidden bg-slate-50/60">
+            <td class="px-5 py-1.5 pl-14 text-slate-700">
+              {{ item.account.name }}
+              {% if item.account.notes %}<span class="ml-1 text-xs text-slate-400">· {{ item.account.notes }}</span>{% endif %}
+            </td>
+            <td class="px-5 py-1.5 text-right num text-slate-700 {% if item.amount < 0 %}text-red-600{% endif %}">{{ item.amount|gbp }}</td>
+            <td class="px-5 py-1.5 text-right text-xs text-slate-400 num">
+              {{ item.amount|pct(row.total) }} of {{ cat.name }}
+            </td>
+          </tr>
+        {% endif %}
+      {% endfor %}
+    {% endfor %}
+  </tbody>
+  <tfoot class="bg-slate-50 font-medium sticky bottom-0 border-t border-slate-200">
+    <tr>
+      <td class="px-5 py-2.5">Net Worth (excl. aux)</td>
+      <td class="px-5 py-2.5 text-right">
+        <div class="num">{{ totals.net_worth|gbp }}</div>
+        <div>{{ m.delta_pill(totals.net_worth, prev_totals.net_worth if prev_totals else none) }}</div>
+      </td>
+      <td class="px-5 py-2.5 text-right text-slate-400">100.0%</td>
+    </tr>
+  </tfoot>
+</table>
+</div>

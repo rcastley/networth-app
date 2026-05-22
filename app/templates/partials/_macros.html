@@ -1,0 +1,16 @@
+{# Shared Jinja macros. Import with: {% import 'partials/_macros.html' as m %} #}
+
+{% macro delta_pill(current, previous, invert=False, show_pct=True) -%}
+  {% if previous is not none %}
+    {% set d = delta(current, previous) %}
+    {% if d and d.direction != 'flat' %}
+      {% set good = (d.direction == 'up') if not invert else (d.direction == 'down') %}
+      <span class="inline-flex items-center gap-0.5 text-xs num {{ 'text-emerald-600' if good else 'text-red-600' }}">
+        <span class="material-symbols-outlined text-sm">{{ 'arrow_circle_up' if d.direction == 'up' else 'arrow_circle_down' }}</span>
+        {{ d.abs|gbp }}{% if show_pct and d.pct is not none %} ({{ '%+.2f' % d.pct }}%){% endif %}
+      </span>
+    {% elif d and d.direction == 'flat' %}
+      <span class="text-xs text-slate-400 num">—</span>
+    {% endif %}
+  {% endif %}
+{%- endmacro %}

@@ -7,6 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 
 from fastapi import FastAPI, Depends, Form, Request, HTTPException, UploadFile, File
 from fastapi.exceptions import RequestValidationError
@@ -21,6 +22,34 @@ from .db import Base, engine, get_db, SessionLocal
 from .models import Category, Account, Snapshot, Balance
 from .seed import seed_if_empty
 from . import services
+
+
+# Server-side dictionary of toast messages. base.html resolves the key sent in
+# the URL — unknown keys render nothing, so the toast text isn't attacker-controllable.
+TOAST_MESSAGES = {
+    "snapshot-created": "Snapshot created",
+    "snapshot-updated": "Snapshot updated",
+    "snapshot-deleted": "Snapshot deleted",
+    "account-created":  "Account created",
+    "account-saved":    "Account saved",
+    "account-deleted":  "Account deleted",
+    "category-created": "Category created",
+    "category-saved":   "Category saved",
+    "category-deleted": "Category deleted",
+}
+
+
+def _redirect_with_toast(url: str, key: str, kind: str = "success") -> RedirectResponse:
+    """303 redirect carrying a one-shot toast keyed to TOAST_MESSAGES.
+    base.html looks the key up; unknown keys render nothing."""
+    if kind not in {"success", "error"}:
+        kind = "success"
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query))
+    query["toast"] = key
+    query["kind"] = kind
+    new_url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+    return RedirectResponse(url=new_url, status_code=303)
 
 # ---------- App setup ----------
 def _run_migrations() -> None:
@@ -145,28 +174,38 @@ except (FileNotFoundError, OSError, yaml.YAMLError):
     _help_doc = {}
 templates.env.globals["help_views"]  = _help_doc.get("views", {})
 templates.env.globals["help_global"] = _help_doc.get("global", [])
+templates.env.globals["toast_messages"] = TOAST_MESSAGES
 
 
-# ---------- Dashboard ----------
+# ---------- Home (accounts + insights) ----------
 
 @app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, db: Session = Depends(get_db)):
+def home(request: Request, db: Session = Depends(get_db)):
     latest = services.latest_snapshot(db)
-    totals = services.snapshot_totals(latest) if latest else None
     previous = services.previous_snapshot(db, latest.snapshot_date) if latest else None
+    totals = services.snapshot_totals(latest) if latest else None
     prev_totals = services.snapshot_totals(previous) if previous else None
     snaps_count = db.scalar(select(func.count(Snapshot.id))) or 0
+
+    latest_balances = services.balance_map(latest) if latest else {}
+    previous_balances = services.balance_map(previous) if previous else None
+    grid = _build_card_grid(db, prefill=latest_balances, previous=previous_balances)
+    account_count = sum(len(cb["cards"]) for cb in grid["categories"])
+
     return templates.TemplateResponse(
-        "dashboard.html",
+        "home.html",
         {
-            "request":     request,
-            "view_id":     "dashboard",
-            "snapshot":    latest,
-            "totals":      totals,
-            "previous":    previous,
-            "prev_totals": prev_totals,
-            "snaps_count": snaps_count,
-            "now":         date.today(),
+            "request":       request,
+            "view_id":       "home",
+            "snapshot":      latest,
+            "totals":        totals,
+            "previous":      previous,
+            "prev_totals":   prev_totals,
+            "snaps_count":   snaps_count,
+            "grid":          grid,
+            "account_count": account_count,
+            "latest_date":   latest.snapshot_date if latest else None,
+            "now":           date.today(),
         },
     )
 
@@ -187,8 +226,13 @@ def snapshots_list(request: Request, db: Session = Depends(get_db)):
     )
 
 
-def _build_card_grid(db: Session, prefill: Optional[dict] = None) -> dict:
+def _build_card_grid(
+    db: Session,
+    prefill: Optional[dict] = None,
+    previous: Optional[dict] = None,
+) -> dict:
     """Group active accounts into a card-friendly structure.
+
     Returns:
         {
           "categories": [
@@ -197,6 +241,7 @@ def _build_card_grid(db: Session, prefill: Optional[dict] = None) -> dict:
                 {"account": Account (top-level / group),
                  "children": [Account, ...],  # empty for non-group leaves
                  "current_total": Decimal,    # sum of prefill across the card's leaves
+                 "previous_total": Decimal,   # same against `previous` (None if no prior snapshot)
                 }, ...
              ]}, ...
           ]
@@ -225,10 +270,21 @@ def _build_card_grid(db: Session, prefill: Optional[dict] = None) -> dict:
         else:
             current = prefill.get(a.id)
             has_any = a.id in prefill
+        previous_total = None
+        if previous is not None:
+            if a.is_group:
+                if any(c.id in previous for c in children):
+                    previous_total = sum(
+                        (previous[c.id] for c in children if c.id in previous),
+                        Decimal("0"),
+                    )
+            else:
+                previous_total = previous.get(a.id)
         cb["cards"].append({
-            "account":       a,
-            "children":      children,
-            "current_total": current if has_any else None,
+            "account":        a,
+            "children":       children,
+            "current_total":  current if has_any else None,
+            "previous_total": previous_total,
         })
 
     categories = sorted(cat_buckets.values(), key=lambda b: b["_sort"])
@@ -288,7 +344,7 @@ async def snapshot_create(request: Request, db: Session = Depends(get_db)):
             continue
         db.add(Balance(snapshot_id=snap.id, account_id=acc.id, amount=amt))
     db.commit()
-    return RedirectResponse(url="/", status_code=303)
+    return _redirect_with_toast("/", "snapshot-created")
 
 
 @app.get("/snapshots/{snap_id}/edit", response_class=HTMLResponse)
@@ -337,7 +393,7 @@ async def snapshot_update(snap_id: int, request: Request, db: Session = Depends(
         elif amt is not None:
             db.add(Balance(snapshot_id=snap.id, account_id=acc.id, amount=amt))
     db.commit()
-    return RedirectResponse(url="/snapshots", status_code=303)
+    return _redirect_with_toast("/snapshots", "snapshot-updated")
 
 
 @app.post("/snapshots/{snap_id}/delete")
@@ -347,29 +403,10 @@ def snapshot_delete(snap_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404)
     db.delete(snap)
     db.commit()
-    return RedirectResponse(url="/snapshots", status_code=303)
+    return _redirect_with_toast("/snapshots", "snapshot-deleted")
 
 
 # ---------- Accounts ----------
-
-@app.get("/accounts", response_class=HTMLResponse)
-def accounts_page(request: Request, db: Session = Depends(get_db)):
-    latest        = services.latest_snapshot(db)
-    grid          = _build_card_grid(db)
-    totals        = services.snapshot_totals(latest) if latest else None
-    account_count = sum(len(cb["cards"]) for cb in grid["categories"])
-    return templates.TemplateResponse(
-        "accounts.html",
-        {
-            "request":       request,
-            "view_id":       "accounts",
-            "grid":          grid,
-            "totals":        totals,
-            "latest_date":   latest.snapshot_date if latest else None,
-            "account_count": account_count,
-        },
-    )
-
 
 @app.get("/accounts/new", response_class=HTMLResponse)
 def account_new_form(request: Request, db: Session = Depends(get_db)):
@@ -396,15 +433,16 @@ def account_detail(acc_id: int, request: Request, db: Session = Depends(get_db))
     all_accounts = list(db.scalars(select(Account).order_by(Account.sort_order)))
     groups = [a for a in all_accounts if a.is_group and a.id != acc.id]
 
-    # Per-account history for sparkline + recent values
+    # Per-account history for sparkline + recent values.
+    # Recent values is a scrollable list in the UI; cap at 500 so a hyperactive
+    # snapshotter doesn't ship a pathological payload to the client.
     history = services.account_history(db, acc)
-    # Last 10 values, newest first, with delta from previous
     recent = []
     for i in range(len(history) - 1, -1, -1):
         d, amt = history[i]
         prev = history[i - 1][1] if i > 0 else None
         recent.append({"date": d, "amount": amt, "previous": prev})
-        if len(recent) >= 10:
+        if len(recent) >= 500:
             break
 
     children = sorted(acc.children, key=lambda c: c.sort_order) if acc.is_group else []
@@ -449,7 +487,7 @@ async def account_create(request: Request, db: Session = Depends(get_db)):
     )
     db.add(acc)
     db.commit()
-    return RedirectResponse(url=f"/accounts/{acc.id}", status_code=303)
+    return _redirect_with_toast(f"/accounts/{acc.id}", "account-created")
 
 
 @app.post("/accounts/{acc_id}")
@@ -479,7 +517,12 @@ async def account_update(acc_id: int, request: Request, db: Session = Depends(ge
             acc.sort_order = int(sort_raw)
         except ValueError:
             pass
+    # is_modified() compares loaded state vs current — same-value assignments don't count.
+    # Must be called before commit (which clears the session's attribute history).
+    changed = db.is_modified(acc, include_collections=False)
     db.commit()
+    if changed:
+        return _redirect_with_toast(f"/accounts/{acc.id}", "account-saved")
     return RedirectResponse(url=f"/accounts/{acc.id}", status_code=303)
 
 
@@ -490,7 +533,7 @@ def account_delete(acc_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404)
     db.delete(acc)
     db.commit()
-    return RedirectResponse(url="/accounts", status_code=303)
+    return _redirect_with_toast("/", "account-deleted")
 
 
 # ---------- Categories ----------
@@ -521,7 +564,7 @@ async def category_create(request: Request, db: Session = Depends(get_db)):
     )
     db.add(cat)
     db.commit()
-    return RedirectResponse(url="/categories", status_code=303)
+    return _redirect_with_toast("/categories", "category-created")
 
 
 @app.post("/categories/{cat_id}")
@@ -535,7 +578,12 @@ async def category_update(cat_id: int, request: Request, db: Session = Depends(g
     cat.in_liquid = form.get("in_liquid") == "on"
     cat.is_liability = form.get("is_liability") == "on"
     cat.color = (form.get("color") or cat.color).strip()
+    # is_modified() compares loaded state vs current — same-value assignments don't count.
+    # Must be called before commit (which clears the session's attribute history).
+    changed = db.is_modified(cat, include_collections=False)
     db.commit()
+    if changed:
+        return _redirect_with_toast("/categories", "category-saved")
     return RedirectResponse(url="/categories", status_code=303)
 
 
@@ -548,7 +596,7 @@ def category_delete(cat_id: int, db: Session = Depends(get_db)):
         raise HTTPException(400, f"Category in use by {len(cat.accounts)} account(s); reassign first.")
     db.delete(cat)
     db.commit()
-    return RedirectResponse(url="/categories", status_code=303)
+    return _redirect_with_toast("/categories", "category-deleted")
 
 
 # ---------- Helpers ----------

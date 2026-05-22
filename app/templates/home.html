@@ -1,0 +1,403 @@
+{% extends "base.html" %}
+{% import 'partials/_macros.html' as m %}
+{% block title %}Accounts · Net Worth{% endblock %}
+
+{% block content %}
+{% if account_count == 0 %}
+  {# No accounts at all: dedicated empty-state, no header/cards #}
+  <div class="relative bg-white rounded-2xl border border-slate-200 p-16 text-center overflow-hidden">
+    <span class="absolute -top-32 -right-32 w-96 h-96 rounded-full opacity-25 blur-3xl" style="background: radial-gradient(circle, #1D4ED8 0%, transparent 70%);"></span>
+    <h1 class="font-display text-6xl font-light tracking-tighter text-slate-900 mb-4 relative">Net worth, tracked</h1>
+    <p class="text-slate-600 mb-8 max-w-md mx-auto relative">Add an account, then record your first snapshot — trends and deltas appear from the second one onward.</p>
+    <a href="/accounts/new" class="relative inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white font-medium px-5 py-2.5 rounded-md">
+      <span class="material-symbols-outlined text-lg">add_circle</span>
+      Add your first account
+    </a>
+  </div>
+{% else %}
+
+<header class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold">Accounts</h1>
+    <p class="text-sm text-slate-500">
+      {% if snapshot %}
+        Latest snapshot: <span class="font-medium text-slate-700">{{ snapshot.snapshot_date|dt }}</span>
+        {% if previous %}· compared to <span class="font-medium text-slate-700">{{ previous.snapshot_date|dt }}</span>{% endif %}
+        · {{ snaps_count }} snapshot{% if snaps_count != 1 %}s{% endif %} total
+      {% else %}
+        {{ account_count }} account{{ '' if account_count == 1 else 's' }} · no snapshots yet
+      {% endif %}
+    </p>
+  </div>
+  <a href="/accounts/new" class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-3 py-1.5 rounded-md">
+    <span class="material-symbols-outlined text-lg">add_circle</span>
+    Add account
+  </a>
+</header>
+
+{% if snapshot %}
+
+{# ---------- Headline cards ---------- #}
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+  <div class="relative bg-white border border-slate-200 rounded-lg p-5 overflow-hidden">
+    <span class="absolute inset-x-0 top-0 h-1" style="background: linear-gradient(90deg, #1D4ED8, #6366F1);"></span>
+    <div class="text-xs uppercase tracking-wide text-slate-500 font-medium">Net Worth</div>
+    <div class="text-3xl font-semibold text-brand-900 mt-1 num">{{ totals.net_worth|gbp }}</div>
+    <div class="mt-1">{{ m.delta_pill(totals.net_worth, prev_totals.net_worth if prev_totals else none) }}</div>
+    <div class="relative mt-3" style="height: 36px;"><canvas id="spark-nw"></canvas></div>
+  </div>
+  <div class="relative bg-white border border-slate-200 rounded-lg p-5 overflow-hidden">
+    <span class="absolute inset-x-0 top-0 h-1" style="background: linear-gradient(90deg, #059669, #10B981);"></span>
+    <div class="text-xs uppercase tracking-wide text-slate-500 font-medium">Liquid (Cash + Investments)</div>
+    <div class="text-3xl font-semibold text-emerald-700 mt-1 num">{{ totals.liquid|gbp }}</div>
+    <div class="mt-1">{{ m.delta_pill(totals.liquid, prev_totals.liquid if prev_totals else none) }}</div>
+    <div class="relative mt-3" style="height: 36px;"><canvas id="spark-liquid"></canvas></div>
+  </div>
+  <div class="relative bg-white border border-slate-200 rounded-lg p-5 overflow-hidden">
+    <span class="absolute inset-x-0 top-0 h-1" style="background: linear-gradient(90deg, #64748B, #94A3B8);"></span>
+    <div class="text-xs uppercase tracking-wide text-slate-500 font-medium">Net Worth + Aux</div>
+    <div class="text-3xl font-semibold text-slate-700 mt-1 num">{{ totals.net_worth_plus_aux|gbp }}</div>
+    <div class="mt-1">{{ m.delta_pill(totals.net_worth_plus_aux, prev_totals.net_worth_plus_aux if prev_totals else none) }}</div>
+    {# Auxiliary categories are typically constant, so no sparkline — placeholder for visual rhythm #}
+    <div class="mt-3 h-[36px] flex items-center justify-center">
+      <div class="h-px w-full bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
+    </div>
+  </div>
+</div>
+
+{# ---------- Tabbed insight widget (collapsed by default) ---------- #}
+<div id="insight-widget" class="bg-white border border-slate-200 rounded-lg overflow-hidden mb-6 collapsed">
+  <div class="flex items-center px-2 border-b border-slate-200">
+    <button type="button" data-tab="trend" class="insight-tab active">
+      <span class="material-symbols-outlined text-base">show_chart</span>
+      Trend
+    </button>
+    <button type="button" data-tab="breakdown" class="insight-tab">
+      <span class="material-symbols-outlined text-base">table_rows</span>
+      Breakdown
+    </button>
+    <button id="toggle-widget" type="button" title="Expand panel"
+            class="ml-auto inline-flex items-center justify-center w-8 h-8 my-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+      <span id="toggle-widget-icon" class="material-symbols-outlined text-lg">unfold_more</span>
+    </button>
+  </div>
+
+  {# ---- Insights: Trend + Allocation side by side ---- #}
+  <div id="panel-trend" class="insight-panel p-5" style="height: 360px;">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 h-full">
+      <div class="lg:col-span-2 flex flex-col min-h-0">
+        <div class="flex items-center justify-between mb-3 shrink-0">
+          <h3 class="text-sm font-medium text-slate-600">Net Worth & Liquid over time</h3>
+          <div class="segmented">
+            <button data-period="weekly"    class="period-btn active">Weekly</button>
+            <button data-period="monthly"   class="period-btn">Monthly</button>
+            <button data-period="quarterly" class="period-btn">Quarterly</button>
+          </div>
+        </div>
+        <div class="relative flex-1 min-h-0">
+          <canvas id="trendChart"></canvas>
+        </div>
+      </div>
+      <div class="flex flex-col min-h-0">
+        <h3 class="text-sm font-medium text-slate-600 mb-3 shrink-0">Allocation</h3>
+        <div class="relative flex-1 min-h-0">
+          <canvas id="allocChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ---- Breakdown: scrollable body + sticky NW footer ---- #}
+  <div id="panel-breakdown" class="insight-panel hidden flex flex-col" style="height: 360px;">
+    {% include 'partials/breakdown.html' %}
+  </div>
+</div>
+{% else %}
+  {# Accounts exist but no snapshot: prompt to create one; cards below show — balances #}
+  <div class="bg-white border border-slate-200 rounded-lg p-6 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div>
+      <h2 class="font-semibold text-slate-900">Record your first snapshot</h2>
+      <p class="text-sm text-slate-500 mt-0.5">Headline figures, trend, and per-card deltas appear once you've captured at least one set of balances.</p>
+    </div>
+    <a href="/snapshots/new" class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded-md shrink-0">
+      <span class="material-symbols-outlined text-lg">add_circle</span>
+      Create first snapshot
+    </a>
+  </div>
+{% endif %}{# /snapshot if-else #}
+
+{# ---------- Card grid ---------- #}
+{% if grid.categories %}
+<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+  {% for cat_bucket in grid.categories %}
+    {% set cat = cat_bucket.category %}
+    {% for card in cat_bucket.cards %}
+      {% set acc = card.account %}
+      {% set children = card.children %}
+      {% set lg = account_logo(acc) %}
+      <a href="/accounts/{{ acc.id }}"
+         class="account-card block rounded-xl overflow-hidden shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all text-white p-5 relative flex flex-col gap-1 min-h-[170px]"
+         style="background: linear-gradient(135deg, {{ cat.color }} 0%, #1e293b 105%);">
+
+        {# Logo / default icon, top-right #}
+        {% if lg.primary %}
+          <img src="{{ lg.primary }}" alt="" loading="lazy"
+               class="absolute top-4 right-4 w-12 h-12 rounded-md bg-white/95 p-1.5 shadow object-scale-down account-logo"
+               {% if lg.fallback %}data-fallback="{{ lg.fallback }}"{% endif %}
+               onerror="logoFallback(this)">
+        {% else %}
+          <div class="absolute top-4 right-4 w-12 h-12 rounded-md bg-white/15 flex items-center justify-center">
+            <span class="material-symbols-outlined text-white/70" style="font-size: 28px;">account_balance</span>
+          </div>
+        {% endif %}
+
+        {# Sub-account count badge on top-right corner of icon box #}
+        {% if acc.is_group %}
+          <span class="absolute top-2 right-2 z-10 bg-red-500 text-white text-[11px] font-bold rounded-full min-w-[20px] h-5 px-1 flex items-center justify-center shadow-md ring-2 ring-white/40">{{ children|length }}</span>
+        {% endif %}
+
+        {% if not acc.is_active %}
+          <span class="absolute top-4 left-4 text-[10px] uppercase tracking-wider bg-white/20 px-1.5 py-0.5 rounded">Inactive</span>
+        {% endif %}
+
+        {# Slot 1: category #}
+        <div class="text-[10px] uppercase tracking-widest opacity-80 font-medium pr-16">{{ cat.name }}</div>
+
+        {# Slot 2: name #}
+        <div class="text-lg font-semibold leading-tight pr-16 truncate">{{ acc.name }}</div>
+
+        {# Slot 3: notes (always reserved, blank if none) #}
+        <div class="text-xs opacity-70 truncate pr-16 min-h-[16px]">{{ acc.notes if acc.notes else '&nbsp;'|safe }}</div>
+
+        {# Spacer pushes balance + delta to bottom for consistent alignment #}
+        <div class="flex-1"></div>
+
+        {# Slot 4: balance #}
+        <div class="text-2xl font-bold num leading-tight">{% if card.current_total is not none %}{{ card.current_total|gbp }}{% else %}<span class="opacity-60">—</span>{% endif %}</div>
+
+        {# Slot 5: delta (always rendered; invisible placeholder keeps height identical) #}
+        {% set d = delta(card.current_total, card.previous_total) if (card.previous_total is not none and card.current_total is not none) else none %}
+        {% if d and d.direction != 'flat' %}
+          {% set good = (d.direction == 'up') if not cat.is_liability else (d.direction == 'down') %}
+          <div class="text-xs num">
+            <span class="inline-flex items-center gap-0.5 {{ 'text-emerald-200' if good else 'text-rose-200' }}">
+              <span class="material-symbols-outlined text-sm">{{ 'arrow_circle_up' if d.direction == 'up' else 'arrow_circle_down' }}</span>
+              {{ d.abs|gbp }}{% if d.pct is not none %} ({{ '%+.2f' % d.pct }}%){% endif %}
+            </span>
+          </div>
+        {% else %}
+          <div class="text-xs num invisible" aria-hidden="true">
+            <span class="inline-flex items-center gap-0.5">
+              <span class="material-symbols-outlined text-sm">arrow_circle_up</span>
+              &nbsp;
+            </span>
+          </div>
+        {% endif %}
+      </a>
+    {% endfor %}
+  {% endfor %}
+</div>
+{% else %}
+  <div class="bg-white border border-slate-200 rounded-lg p-8 text-center">
+    <p class="text-slate-600 mb-4">No accounts yet.</p>
+    <a href="/accounts/new" class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">
+      <span class="material-symbols-outlined text-lg">add_circle</span>
+      Add your first account
+    </a>
+  </div>
+{% endif %}{# /grid.categories #}
+
+{% if snapshot %}
+<script>
+  let trendChart, allocChart, sparkNw, sparkLiquid;
+  let expandedChartsInited = false;
+
+  function renderSpark(canvasId, labels, values, color, prev) {
+    const el = document.getElementById(canvasId);
+    if (!el) return null;
+    const ctx = el.getContext('2d');
+    if (prev) prev.destroy();
+    return new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          borderColor: color,
+          backgroundColor: color + '22',
+          fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        scales: { x: { display: false }, y: { display: false } },
+        elements: { line: { borderJoinStyle: 'round' } },
+      },
+    });
+  }
+
+  // Sparklines fetch chart data on page load (always visible in headline cards)
+  async function loadSparklines() {
+    const res = await fetch(`/api/chart-data?period=weekly`);
+    const data = await res.json();
+    sparkNw     = renderSpark('spark-nw',     data.labels, data.net_worth, '#1D4ED8', sparkNw);
+    sparkLiquid = renderSpark('spark-liquid', data.labels, data.liquid,    '#059669', sparkLiquid);
+  }
+
+  // Trend chart in the (initially collapsed) tabbed widget — created on first expand
+  async function loadTrend(period) {
+    const res = await fetch(`/api/chart-data?period=${period}`);
+    const data = await res.json();
+    const ctx = document.getElementById('trendChart').getContext('2d');
+    if (trendChart) trendChart.destroy();
+    trendChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: data.labels,
+        datasets: [
+          { label: 'Net Worth', data: data.net_worth, borderColor: '#1D4ED8', backgroundColor: 'rgba(29,78,216,0.08)', fill: true,  tension: 0.25, pointRadius: 3 },
+          { label: 'Liquid',    data: data.liquid,    borderColor: '#059669', backgroundColor: 'rgba(5,150,105,0.05)',  fill: false, tension: 0.25, pointRadius: 3 },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: { y: { ticks: { callback: v => '£' + v.toLocaleString() } } },
+        plugins: { legend: { position: 'bottom' } }
+      }
+    });
+  }
+
+  function initExpandedCharts() {
+    if (expandedChartsInited) return;
+    loadTrend('weekly');
+    loadAlloc();
+    expandedChartsInited = true;
+  }
+
+  function loadAlloc() {
+    const labels = {{ totals.by_category | map(attribute='category.name')         | list | tojson }};
+    const values = {{ totals.by_category | map(attribute='total') | map('float') | list | tojson }};
+    const colors = {{ totals.by_category | map(attribute='category.color')        | list | tojson }};
+    const inNW   = {{ totals.by_category | map(attribute='category.in_net_worth') | list | tojson }};
+    const isLiab = {{ totals.by_category | map(attribute='category.is_liability') | list | tojson }};
+    const fL = [], fV = [], fC = [];
+    for (let i = 0; i < labels.length; i++) {
+      if (inNW[i] && !isLiab[i] && values[i] > 0) {
+        fL.push(labels[i]); fV.push(values[i]); fC.push(colors[i]);
+      }
+    }
+    const ctx = document.getElementById('allocChart').getContext('2d');
+    if (allocChart) allocChart.destroy();
+    allocChart = new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels: fL, datasets: [{ data: fV, backgroundColor: fC }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 10 } },
+          tooltip: { callbacks: { label: c => `${c.label}: £${c.parsed.toLocaleString()}` } }
+        }
+      }
+    });
+  }
+
+  // ---- Tabs ----
+  document.querySelectorAll('.insight-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.tab;
+      document.querySelectorAll('.insight-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.insight-panel').forEach(p => p.classList.add('hidden'));
+      document.getElementById('panel-' + target).classList.remove('hidden');
+      // If the widget was collapsed, expand it on tab click
+      if (document.getElementById('insight-widget').classList.contains('collapsed')) {
+        setWidgetCollapsed(false);
+      }
+    });
+  });
+
+  // ---- Trend period buttons ----
+  document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      loadTrend(btn.dataset.period);
+    });
+  });
+  loadSparklines();
+
+  // ---- Hierarchical expand/collapse ----
+  function setCatExpanded(catId, expanded) {
+    document.querySelectorAll('.cat-l1-' + catId).forEach(r => r.classList.toggle('hidden', !expanded));
+    if (!expanded) {
+      document.querySelectorAll('.cat-l1-' + catId + '.parent-row').forEach(p => {
+        const pid = p.dataset.parent;
+        document.querySelectorAll('.parent-l2-' + pid).forEach(r => r.classList.add('hidden'));
+        const chev = document.getElementById('chev-parent-' + pid);
+        if (chev) chev.classList.remove('rotate-90');
+      });
+    }
+    const chev = document.getElementById('chev-cat-' + catId);
+    if (chev) chev.classList.toggle('rotate-90', expanded);
+  }
+
+  function setParentExpanded(parentId, expanded) {
+    document.querySelectorAll('.parent-l2-' + parentId).forEach(r => r.classList.toggle('hidden', !expanded));
+    const chev = document.getElementById('chev-parent-' + parentId);
+    if (chev) chev.classList.toggle('rotate-90', expanded);
+  }
+
+  document.querySelectorAll('.cat-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const id = row.dataset.cat;
+      const anyHidden = document.querySelector('.cat-l1-' + id + '.hidden') !== null;
+      setCatExpanded(id, anyHidden);
+    });
+  });
+
+  document.querySelectorAll('.parent-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const pid = row.dataset.parent;
+      const anyHidden = document.querySelector('.parent-l2-' + pid + '.hidden') !== null;
+      setParentExpanded(pid, anyHidden);
+    });
+  });
+
+  // ---- Whole-widget collapse (hide panels, keep tab strip) ----
+  function setWidgetCollapsed(collapsed) {
+    const widget = document.getElementById('insight-widget');
+    const icon = document.getElementById('toggle-widget-icon');
+    const btn  = document.getElementById('toggle-widget');
+    widget.classList.toggle('collapsed', collapsed);
+    icon.textContent = collapsed ? 'unfold_more' : 'unfold_less';
+    btn.title = collapsed ? 'Expand panel' : 'Collapse panel';
+    if (!collapsed) {
+      // Lazy-init the trend + allocation charts the first time the user expands;
+      // re-fit on each expand so canvases pick up their new container size.
+      initExpandedCharts();
+      requestAnimationFrame(() => {
+        if (trendChart) trendChart.resize();
+        if (allocChart) allocChart.resize();
+      });
+    }
+  }
+
+  document.getElementById('toggle-widget')?.addEventListener('click', () => {
+    const widget = document.getElementById('insight-widget');
+    setWidgetCollapsed(!widget.classList.contains('collapsed'));
+  });
+
+  document.getElementById('toggle-all-cats')?.addEventListener('click', (e) => {
+    const expandAll = e.target.textContent.trim() === 'Expand all';
+    document.querySelectorAll('.cat-row').forEach(row => setCatExpanded(row.dataset.cat, expandAll));
+    if (expandAll) {
+      document.querySelectorAll('.parent-row').forEach(p => setParentExpanded(p.dataset.parent, true));
+    }
+    e.target.textContent = expandAll ? 'Collapse all' : 'Expand all';
+  });
+</script>
+{% endif %}{# /snapshot script #}
+{% endif %}{# /account_count > 0 #}
+{% endblock %}

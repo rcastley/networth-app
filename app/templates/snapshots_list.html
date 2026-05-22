@@ -4,7 +4,10 @@
 {% block content %}
 <header class="flex items-center justify-between mb-4">
   <h1 class="text-2xl font-semibold">Snapshots</h1>
-  <a href="/snapshots/new" class="bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-3 py-1.5 rounded">+ New snapshot</a>
+  <a href="/snapshots/new" class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-3 py-1.5 rounded">
+    <span class="material-symbols-outlined text-lg">add_circle</span>
+    New snapshot
+  </a>
 </header>
 
 {% if not snapshots %}
@@ -34,10 +37,16 @@
           <td class="px-5 py-2 text-right text-slate-500">{{ s.balances|length }}</td>
           <td class="px-5 py-2 text-slate-500 truncate max-w-xs">{{ s.notes }}</td>
           <td class="px-5 py-2 text-right whitespace-nowrap">
-            <a href="/snapshots/{{ s.id }}/edit" class="text-brand-700 hover:underline text-sm">Edit</a>
-            <form method="post" action="/snapshots/{{ s.id }}/delete" class="inline ml-3"
+            <a href="/snapshots/{{ s.id }}/edit" title="Edit snapshot"
+               class="inline-flex items-center text-brand-700 hover:text-brand-900 align-middle">
+              <span class="material-symbols-outlined text-xl">edit</span>
+            </a>
+            <form method="post" action="/snapshots/{{ s.id }}/delete" class="inline ml-2 align-middle"
                   onsubmit="return confirm('Delete snapshot {{ s.snapshot_date|dt }}?');">
-              <button class="text-red-600 hover:underline text-sm">Delete</button>
+              <button title="Delete snapshot"
+                      class="inline-flex items-center text-red-600 hover:text-red-800">
+                <span class="material-symbols-outlined text-xl">delete</span>
+              </button>
             </form>
           </td>
         </tr>
