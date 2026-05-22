@@ -56,6 +56,9 @@ Screenshots from the demo dataset:
 ![Accounts](docs/screenshots/accounts.png)
 *Accounts: card grid with institution logos, grouped accounts (Main Bank, Vanguard) showing sub-account totals.*
 
+![Account detail](docs/screenshots/account-detail.png)
+*Account detail (clicking the Main Bank card): hero summary with logo, full edit form, sparkline trend, recent-values table with deltas, and a sub-accounts panel for group accounts.*
+
 ![Snapshots](docs/screenshots/snapshots.png)
 *Snapshots list: every recorded point in time with notes and per-snapshot Net Worth / Liquid totals.*
 
