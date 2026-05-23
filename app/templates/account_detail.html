@@ -159,7 +159,7 @@
   <div id="acc-panel-edit" class="acc-panel p-6 hidden">
     <div class="flex items-center justify-end mb-4">
       <form method="post" action="/accounts/{{ account.id }}/delete"
-            onsubmit="return confirm('Delete {{ account.name }} and all its balance history? This cannot be undone.');">
+            data-confirm="Delete {{ account.name }} and all its balance history? This cannot be undone.">
         <button class="inline-flex items-center gap-1 text-red-600 hover:text-red-800 text-sm">
           <span class="material-symbols-outlined text-base">delete</span>
           Delete account
@@ -184,21 +184,14 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Parent group</label>
-          <select name="parent_id" class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
-            <option value="">— (top-level)</option>
-            {% for g in groups %}
-              <option value="{{ g.id }}" {% if g.id == account.parent_id %}selected{% endif %}>{{ g.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Sort order</label>
-          <input name="sort_order" type="number" value="{{ account.sort_order }}"
-                 class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
-        </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Parent group</label>
+        <select name="parent_id" class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+          <option value="">— (top-level)</option>
+          {% for g in groups %}
+            <option value="{{ g.id }}" {% if g.id == account.parent_id %}selected{% endif %}>{{ g.name }}</option>
+          {% endfor %}
+        </select>
       </div>
 
       <div>

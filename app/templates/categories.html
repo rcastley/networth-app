@@ -37,7 +37,7 @@
 {% for cat in categories %}
   <form id="cat-form-{{ cat.id }}" method="post" action="/categories/{{ cat.id }}"></form>
   <form id="cat-del-{{ cat.id }}"  method="post" action="/categories/{{ cat.id }}/delete"
-        onsubmit="return confirm('Delete category {{ cat.name }}? Reassign its accounts first.');"></form>
+        data-confirm="Delete category {{ cat.name }}? Reassign its accounts first."></form>
 {% endfor %}
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">

@@ -70,7 +70,7 @@ def snapshot_totals(snap: Snapshot) -> dict:
                 "parent":   acc.parent,
                 "total":    Decimal("0"),
                 "children": [],
-                "_sort":    acc.parent.sort_order,
+                "_sort":    (acc.parent.sort_order, acc.parent.id),
             })
             pg["total"] += b.amount
             pg["children"].append({"account": acc, "amount": b.amount})
@@ -79,7 +79,7 @@ def snapshot_totals(snap: Snapshot) -> dict:
                 "type":    "leaf",
                 "account": acc,
                 "amount":  b.amount,
-                "_sort":   acc.sort_order,
+                "_sort":   (acc.sort_order, acc.id),
             })
 
     # Build sorted output
@@ -89,15 +89,15 @@ def snapshot_totals(snap: Snapshot) -> dict:
         items.sort(key=lambda x: x["_sort"])
         for item in items:
             if item["type"] == "group":
-                item["children"].sort(key=lambda c: c["account"].sort_order)
+                item["children"].sort(key=lambda c: (c["account"].sort_order, c["account"].id))
         rows.append({
             "category": cb["category"],
             "total":    cb["total"],
             "rows":     items,
-            "accounts": sorted(cb["_flat"], key=lambda e: e["account"].sort_order),
+            "accounts": sorted(cb["_flat"], key=lambda e: (e["account"].sort_order, e["account"].id)),
         })
 
-    rows.sort(key=lambda r: r["category"].sort_order)
+    rows.sort(key=lambda r: (r["category"].sort_order, r["category"].id))
 
     cat_map: dict[str, Decimal] = {r["category"].name: r["total"] for r in rows}
     net_worth = sum((r["total"] for r in rows if r["category"].in_net_worth), Decimal("0"))
@@ -176,7 +176,7 @@ def time_series(db: Session, period: str = "weekly") -> dict:
     liq: list[float] = []
     by_cat: dict[str, list[float]] = {}
 
-    all_categories = [c.name for c in db.scalars(select(Category).order_by(Category.sort_order)).all()]
+    all_categories = [c.name for c in db.scalars(select(Category).order_by(Category.sort_order, Category.id)).all()]
     for c in all_categories:
         by_cat[c] = []
 
@@ -206,7 +206,7 @@ def active_accounts(db: Session) -> list[Account]:
         select(Account)
         .options(joinedload(Account.category), joinedload(Account.parent))
         .where(Account.is_active == True)
-        .order_by(Account.sort_order)
+        .order_by(Account.sort_order, Account.id)
     ))
 
 
@@ -215,12 +215,12 @@ def active_leaf_accounts(db: Session) -> list[Account]:
     return list(db.scalars(
         select(Account)
         .where(Account.is_active == True, Account.is_group == False)
-        .order_by(Account.sort_order)
+        .order_by(Account.sort_order, Account.id)
     ))
 
 
 def all_categories(db: Session) -> list[Category]:
-    return list(db.scalars(select(Category).order_by(Category.sort_order)))
+    return list(db.scalars(select(Category).order_by(Category.sort_order, Category.id)))
 
 
 def balance_map(snap: Optional[Snapshot]) -> dict[int, Decimal]:

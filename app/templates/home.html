@@ -178,9 +178,8 @@
         {# Slot 5: delta (always rendered; invisible placeholder keeps height identical) #}
         {% set d = delta(card.current_total, card.previous_total) if (card.previous_total is not none and card.current_total is not none) else none %}
         {% if d and d.direction != 'flat' %}
-          {% set good = (d.direction == 'up') if not cat.is_liability else (d.direction == 'down') %}
-          <div class="text-xs num">
-            <span class="inline-flex items-center gap-0.5 {{ 'text-emerald-200' if good else 'text-rose-200' }}">
+          <div class="text-xs num text-white/90">
+            <span class="inline-flex items-center gap-0.5">
               <span class="material-symbols-outlined text-sm">{{ 'arrow_circle_up' if d.direction == 'up' else 'arrow_circle_down' }}</span>
               {{ d.abs|gbp }}{% if d.pct is not none %} ({{ '%+.2f' % d.pct }}%){% endif %}
             </span>

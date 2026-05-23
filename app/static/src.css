@@ -117,6 +117,36 @@
     border-bottom-color: var(--accent);
   }
 
+  /* ---------- Confirm dialog ---------- */
+  .confirm-dialog {
+    border: none;
+    border-radius: 12px;
+    padding: 0;
+    max-width: 28rem;
+    width: 92vw;
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35), 0 0 0 1px rgba(15, 23, 42, 0.05);
+  }
+  .confirm-dialog::backdrop {
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(2px);
+  }
+  .confirm-dialog[open] {
+    animation: confirm-in 180ms ease-out;
+  }
+  .confirm-dialog[open]::backdrop {
+    animation: backdrop-in 180ms ease-out;
+  }
+  @keyframes confirm-in {
+    from { opacity: 0; transform: translateY(-12px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes backdrop-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
   /* ---------- Toasts ---------- */
   .toast {
     position: fixed;

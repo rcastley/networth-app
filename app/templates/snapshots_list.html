@@ -42,7 +42,7 @@
               <span class="material-symbols-outlined text-xl">edit</span>
             </a>
             <form method="post" action="/snapshots/{{ s.id }}/delete" class="inline ml-2 align-middle"
-                  onsubmit="return confirm('Delete snapshot {{ s.snapshot_date|dt }}?');">
+                  data-confirm="Delete snapshot {{ s.snapshot_date|dt }}?">
               <button title="Delete snapshot"
                       class="inline-flex items-center text-red-600 hover:text-red-800">
                 <span class="material-symbols-outlined text-xl">delete</span>

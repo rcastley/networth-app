@@ -261,9 +261,9 @@ def _build_card_grid(
         if a.parent_id is not None:
             continue  # only top-level accounts become cards
         cb = cat_buckets.setdefault(a.category_id, {
-            "category": a.category, "cards": [], "_sort": a.category.sort_order
+            "category": a.category, "cards": [], "_sort": (a.category.sort_order, a.category.id)
         })
-        children = sorted(by_parent.get(a.id, []), key=lambda c: c.sort_order)
+        children = sorted(by_parent.get(a.id, []), key=lambda c: (c.sort_order, c.id))
         if a.is_group:
             current = sum((prefill[c.id] for c in children if c.id in prefill), Decimal("0"))
             has_any = any(c.id in prefill for c in children)
@@ -289,7 +289,7 @@ def _build_card_grid(
 
     categories = sorted(cat_buckets.values(), key=lambda b: b["_sort"])
     for cb in categories:
-        cb["cards"].sort(key=lambda c: c["account"].sort_order)
+        cb["cards"].sort(key=lambda c: (c["account"].sort_order, c["account"].id))
     return {"categories": categories}
 
 
@@ -411,7 +411,7 @@ def snapshot_delete(snap_id: int, db: Session = Depends(get_db)):
 @app.get("/accounts/new", response_class=HTMLResponse)
 def account_new_form(request: Request, db: Session = Depends(get_db)):
     categories = services.all_categories(db)
-    all_accounts = list(db.scalars(select(Account).order_by(Account.sort_order)))
+    all_accounts = list(db.scalars(select(Account).order_by(Account.sort_order, Account.id)))
     groups = [a for a in all_accounts if a.is_group]
     return templates.TemplateResponse(
         "account_new.html",
@@ -430,7 +430,7 @@ def account_detail(acc_id: int, request: Request, db: Session = Depends(get_db))
     if not acc:
         raise HTTPException(404, f"Account {acc_id} not found.")
     categories = services.all_categories(db)
-    all_accounts = list(db.scalars(select(Account).order_by(Account.sort_order)))
+    all_accounts = list(db.scalars(select(Account).order_by(Account.sort_order, Account.id)))
     groups = [a for a in all_accounts if a.is_group and a.id != acc.id]
 
     # Per-account history for sparkline + recent values.
@@ -445,7 +445,7 @@ def account_detail(acc_id: int, request: Request, db: Session = Depends(get_db))
         if len(recent) >= 500:
             break
 
-    children = sorted(acc.children, key=lambda c: c.sort_order) if acc.is_group else []
+    children = sorted(acc.children, key=lambda c: (c.sort_order, c.id)) if acc.is_group else []
     children_latest = services.latest_balances_for_accounts(db, children)
 
     return templates.TemplateResponse(
@@ -478,10 +478,9 @@ async def account_create(request: Request, db: Session = Depends(get_db)):
     logo_url           = _validated_logo_url(form.get("logo_url"))
     if not name:
         raise HTTPException(400, "Name is required")
-    max_sort = db.scalar(select(Account.sort_order).order_by(Account.sort_order.desc()).limit(1)) or 0
     acc = Account(
         name=name, category_id=category_id, notes=notes,
-        sort_order=max_sort + 10, is_active=True,
+        is_active=True,
         is_group=is_group, parent_id=parent_id,
         institution_domain=institution_domain, logo_url=logo_url,
     )
@@ -511,12 +510,6 @@ async def account_update(acc_id: int, request: Request, db: Session = Depends(ge
     acc.parent_id = new_parent
     acc.institution_domain = (form.get("institution_domain") or "").strip() or None
     acc.logo_url           = _validated_logo_url(form.get("logo_url"))
-    sort_raw = (form.get("sort_order") or "").strip()
-    if sort_raw:
-        try:
-            acc.sort_order = int(sort_raw)
-        except ValueError:
-            pass
     # is_modified() compares loaded state vs current — same-value assignments don't count.
     # Must be called before commit (which clears the session's attribute history).
     changed = db.is_modified(acc, include_collections=False)
@@ -553,10 +546,8 @@ async def category_create(request: Request, db: Session = Depends(get_db)):
     name = (form.get("name") or "").strip()
     if not name:
         raise HTTPException(400, "Name required")
-    max_sort = db.scalar(select(Category.sort_order).order_by(Category.sort_order.desc()).limit(1)) or 0
     cat = Category(
         name=name,
-        sort_order=max_sort + 10,
         in_net_worth=form.get("in_net_worth") == "on",
         in_liquid=form.get("in_liquid") == "on",
         is_liability=form.get("is_liability") == "on",

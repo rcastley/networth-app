@@ -6,7 +6,7 @@
   <title>{% block title %}Net Worth{% endblock %}</title>
   <link rel="stylesheet" href="/static/app.css">
   <link rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=account_balance,add_circle,arrow_circle_down,arrow_circle_left,arrow_circle_up,cancel,check_circle,chevron_right,delete,edit,error,help,show_chart,table_rows,unfold_less,unfold_more,upload&display=block">
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=account_balance,add_circle,arrow_circle_down,arrow_circle_left,arrow_circle_up,cancel,check_circle,chevron_right,delete,edit,error,help,show_chart,table_rows,unfold_less,unfold_more,upload,warning&display=block">
   <style>
     .material-symbols-outlined { vertical-align: middle; }
   </style>
@@ -56,6 +56,58 @@
   <main class="max-w-7xl mx-auto px-4 py-6">
     {% block content %}{% endblock %}
   </main>
+
+  {# ---------- Confirm dialog (used by any form with a data-confirm="..." attribute) ---------- #}
+  <dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <div class="p-6">
+        <div class="flex items-start gap-3 mb-5">
+          <span class="material-symbols-outlined text-red-600 shrink-0" style="font-size: 28px;">warning</span>
+          <div class="flex-1">
+            <h2 id="confirm-title" class="font-semibold text-slate-900 text-lg leading-tight">Are you sure?</h2>
+            <p id="confirm-message" class="text-sm text-slate-600 mt-1.5"></p>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2">
+          <button value="cancel" type="submit"
+                  class="inline-flex items-center gap-1 px-4 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50">
+            <span class="material-symbols-outlined text-lg">cancel</span>
+            Cancel
+          </button>
+          <button value="confirm" type="submit"
+                  class="inline-flex items-center gap-1 px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded">
+            <span class="material-symbols-outlined text-lg">delete</span>
+            Delete
+          </button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+  <script>
+    (function () {
+      const dialog = document.getElementById('confirm-dialog');
+      const msgEl  = document.getElementById('confirm-message');
+      if (!dialog || !msgEl) return;
+      let pendingForm = null;
+
+      document.querySelectorAll('form[data-confirm]').forEach(form => {
+        form.addEventListener('submit', e => {
+          e.preventDefault();
+          msgEl.textContent = form.dataset.confirm;
+          pendingForm = form;
+          dialog.showModal();
+        });
+      });
+
+      dialog.addEventListener('close', () => {
+        if (dialog.returnValue === 'confirm' && pendingForm) {
+          // form.submit() bypasses the submit event listener, so we don't re-prompt
+          pendingForm.submit();
+        }
+        pendingForm = null;
+      });
+    })();
+  </script>
 
   {# ---------- Flash toast (key + kind set by _redirect_with_toast) ---------- #}
   {% set _toast_key  = request.query_params.get('toast') %}
