@@ -12,15 +12,16 @@
 
 <section class="bg-white border border-slate-200 rounded-lg p-6 max-w-3xl">
   <form method="post" action="/accounts" class="space-y-4">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Name</label>
-        <input name="name" required autofocus
+        <label for="acc-new-name" class="block text-xs font-medium text-slate-600 mb-1">Name</label>
+        <input id="acc-new-name" name="name" required autofocus
                class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
       </div>
       <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Category</label>
-        <select name="category_id" required class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+        <label for="acc-new-category" class="block text-xs font-medium text-slate-600 mb-1">Category</label>
+        <select id="acc-new-category" name="category_id" required class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
           {% for c in categories %}
             <option value="{{ c.id }}">{{ c.name }}</option>
           {% endfor %}
@@ -29,18 +30,19 @@
     </div>
 
     <div>
-      <label class="block text-xs font-medium text-slate-600 mb-1">Parent group</label>
-      <select name="parent_id" class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+      <label for="acc-new-parent" class="block text-xs font-medium text-slate-600 mb-1">Parent group</label>
+      <select id="acc-new-parent" name="parent_id" class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
         <option value="">— (top-level)</option>
         {% for g in groups %}
           <option value="{{ g.id }}">{{ g.name }}</option>
         {% endfor %}
       </select>
+      <p class="text-xs text-slate-400 mt-1">Only leaf accounts can have a parent; groups always remain top-level.</p>
     </div>
 
     <div>
-      <label class="block text-xs font-medium text-slate-600 mb-1">Notes</label>
-      <input name="notes" class="w-full border border-slate-300 rounded px-3 py-2 text-sm"
+      <label for="acc-new-notes" class="block text-xs font-medium text-slate-600 mb-1">Notes</label>
+      <input id="acc-new-notes" name="notes" class="w-full border border-slate-300 rounded px-3 py-2 text-sm"
              placeholder="Brief description (optional)">
     </div>
 
@@ -48,14 +50,14 @@
       <legend class="text-xs font-medium text-slate-600 px-1">Institution &amp; logo</legend>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
-          <label class="block text-xs text-slate-500 mb-1">Domain</label>
-          <input name="institution_domain" placeholder="e.g. chase.com"
+          <label for="acc-new-domain" class="block text-xs text-slate-500 mb-1">Domain</label>
+          <input id="acc-new-domain" name="institution_domain" placeholder="e.g. chase.com"
                  class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
           <p class="text-xs text-slate-400 mt-1">Logo fetched automatically. Leave blank to inherit from parent group.</p>
         </div>
         <div>
-          <label class="block text-xs text-slate-500 mb-1">Logo URL (override)</label>
-          <input name="logo_url" placeholder="https://..."
+          <label for="acc-new-logo" class="block text-xs text-slate-500 mb-1">Logo URL (override)</label>
+          <input id="acc-new-logo" name="logo_url" placeholder="https://..."
                  class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
           <p class="text-xs text-slate-400 mt-1">Direct image URL; takes priority over the domain lookup.</p>
         </div>
@@ -63,7 +65,7 @@
     </fieldset>
 
     <label class="flex items-center gap-2 text-sm">
-      <input type="checkbox" name="is_group" class="rounded">
+      <input id="acc-new-is-group" type="checkbox" name="is_group" class="rounded">
       Group (folder for child accounts; no balance of its own)
     </label>
 
@@ -79,4 +81,17 @@
     </div>
   </form>
 </section>
+<script>
+  (function () {
+    const group = document.getElementById('acc-new-is-group');
+    const parent = document.getElementById('acc-new-parent');
+    if (!group || !parent) return;
+    function syncParentAvailability() {
+      if (group.checked) parent.value = '';
+      parent.disabled = group.checked;
+    }
+    group.addEventListener('change', syncParentAvailability);
+    syncParentAvailability();
+  })();
+</script>
 {% endblock %}

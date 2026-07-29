@@ -18,6 +18,7 @@
 </div>
 {% else %}
 <form method="post" action="{{ form_action }}" class="space-y-6">
+  <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
 
   <!-- Sticky header: title, date/time, notes, save -->
   <div class="bg-white border border-slate-200 rounded-lg p-5 sticky top-16 z-10 shadow-sm">
@@ -30,13 +31,13 @@
     </div>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Date &amp; time</label>
-        <input type="datetime-local" name="snapshot_date" required value="{{ default_date }}"
+        <label for="snapshot-date" class="block text-xs font-medium text-slate-600 mb-1">Date &amp; time</label>
+        <input id="snapshot-date" type="datetime-local" name="snapshot_date" required value="{{ default_date }}"
                class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
       </div>
       <div class="md:col-span-2">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Notes (optional)</label>
-        <input type="text" name="notes" value="{{ snapshot.notes if snapshot else '' }}" placeholder="e.g. End of month, bonus paid, etc."
+        <label for="snapshot-notes" class="block text-xs font-medium text-slate-600 mb-1">Notes (optional)</label>
+        <input id="snapshot-notes" type="text" name="notes" value="{{ snapshot.notes if snapshot else '' }}" placeholder="e.g. End of month, bonus paid, etc."
                class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
       </div>
     </div>
@@ -65,6 +66,7 @@
 
             <!-- Card face: looks like a payment card -->
             <button type="button" class="card-face block w-full text-left text-white p-5 relative min-h-[170px] flex flex-col justify-between"
+                    id="card-face-{{ acc.id }}" aria-label="Edit balance for {{ acc.name }}"
                     aria-expanded="false" aria-controls="card-editor-{{ acc.id }}"
                     style="background: linear-gradient(135deg, {{ cat.color }} 0%, #1e293b 105%);">
 
@@ -99,7 +101,8 @@
             </button>
 
             <!-- Editor: inputs revealed when expanded -->
-            <div id="card-editor-{{ acc.id }}" class="card-editor hidden bg-white border-t border-slate-200 p-4 space-y-2">
+            <div id="card-editor-{{ acc.id }}" aria-hidden="true"
+                 class="card-editor hidden bg-white border-t border-slate-200 p-4 space-y-2">
               {% if children %}
                 {% for child in children %}
                   {% set child_lg = account_logo(child) %}
@@ -114,13 +117,14 @@
                         <div class="w-5 h-5 rounded border border-dashed border-slate-200 shrink-0"></div>
                       {% endif %}
                       <div class="min-w-0">
-                        <div class="text-sm font-medium text-slate-800 truncate">{{ child.name }}</div>
-                        <div class="text-xs text-slate-400">
+                        <label for="balance-{{ child.id }}" class="text-sm font-medium text-slate-800 truncate">{{ child.name }}</label>
+                        <div id="balance-{{ child.id }}-hint" class="text-xs text-slate-400">
                           {% if child.id in prefill %}Last: {{ prefill[child.id]|gbp }}{% else %}No prior value{% endif %}
                         </div>
                       </div>
                     </div>
-                    <input type="text" inputmode="decimal" name="acc_{{ child.id }}"
+                    <input id="balance-{{ child.id }}" type="text" inputmode="decimal" name="acc_{{ child.id }}"
+                           aria-describedby="balance-{{ child.id }}-hint"
                            value="{{ prefill[child.id] if child.id in prefill else '' }}"
                            placeholder="0.00"
                            class="num w-32 text-right border border-slate-300 rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
@@ -129,11 +133,13 @@
               {% else %}
                 <div class="flex items-center justify-between gap-3">
                   <div class="min-w-0 flex-1">
-                    <div class="text-xs text-slate-400">
+                    <label for="balance-{{ acc.id }}" class="sr-only">{{ acc.name }} balance</label>
+                    <div id="balance-{{ acc.id }}-hint" class="text-xs text-slate-400">
                       {% if acc.id in prefill %}Last: {{ prefill[acc.id]|gbp }}{% else %}No prior value{% endif %}
                     </div>
                   </div>
-                  <input type="text" inputmode="decimal" name="acc_{{ acc.id }}"
+                  <input id="balance-{{ acc.id }}" type="text" inputmode="decimal" name="acc_{{ acc.id }}"
+                         aria-describedby="balance-{{ acc.id }}-hint"
                          value="{{ prefill[acc.id] if acc.id in prefill else '' }}"
                          placeholder="0.00"
                          class="num w-32 text-right border border-slate-300 rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
@@ -172,6 +178,7 @@
       const editor = card.querySelector('.card-editor');
       const expanded = !editor.classList.contains('hidden');
       editor.classList.toggle('hidden', expanded);
+      editor.setAttribute('aria-hidden', String(expanded));
       face.setAttribute('aria-expanded', String(!expanded));
       face.querySelector('.chev-text').textContent = expanded ? 'Tap to edit' : 'Tap to close';
       // Focus the first input when opening
@@ -182,6 +189,18 @@
     });
   });
 
+  document.querySelectorAll('.card-editor').forEach(editor => {
+    editor.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      const face = editor.parentElement.querySelector('.card-face');
+      editor.classList.add('hidden');
+      editor.setAttribute('aria-hidden', 'true');
+      face.setAttribute('aria-expanded', 'false');
+      face.querySelector('.chev-text').textContent = 'Tap to edit';
+      face.focus();
+    });
+  });
+
   // When editing a snapshot, pre-expand cards that already have any value
   {% if snapshot %}
     document.querySelectorAll('.card-editor').forEach(editor => {
@@ -189,6 +208,7 @@
         .some(i => i.value && i.value.trim() !== '');
       if (hasValue) {
         editor.classList.remove('hidden');
+        editor.setAttribute('aria-hidden', 'false');
         const face = editor.parentElement.querySelector('.card-face');
         face.setAttribute('aria-expanded', 'true');
         face.querySelector('.chev-text').textContent = 'Tap to close';

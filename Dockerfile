@@ -1,13 +1,12 @@
 # ---- Stage 1: build Tailwind CSS ----
 FROM node:20-alpine AS css-builder
 WORKDIR /build
-COPY package.json tailwind.config.js ./
-RUN npm install --no-audit --no-fund --omit=optional
+COPY package.json package-lock.json tailwind.config.js ./
+RUN npm ci --no-audit --no-fund --omit=optional
 COPY app/templates ./app/templates
 COPY app/help.yaml ./app/help.yaml
 COPY app/static/src.css ./app/static/src.css
-RUN mkdir -p app/static && \
-    npx tailwindcss -i app/static/src.css -o app/static/app.css --minify
+RUN npm run build
 
 # ---- Stage 2: Python runtime ----
 FROM python:3.12-slim
@@ -26,6 +25,7 @@ COPY app ./app
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY --from=css-builder /build/app/static/app.css /srv/app/static/app.css
+COPY --from=css-builder /build/app/static/vendor/chart.umd.min.js /srv/app/static/vendor/chart.umd.min.js
 
 RUN mkdir -p /data && \
     groupadd -g 1000 app && \

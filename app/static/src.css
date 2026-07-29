@@ -48,6 +48,22 @@
     color: #9CA3AF;
   }
 
+  /* ---------- Dashboard privacy mode ---------- */
+  [data-private-value] {
+    transition: filter 120ms ease, opacity 120ms ease;
+  }
+  .dashboard-values-hidden [data-private-value] {
+    filter: blur(7px);
+    opacity: 0.55;
+    pointer-events: none;
+    user-select: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-private-value] {
+      transition: none;
+    }
+  }
+
   /* ---------- £ wordmark ---------- */
   .wordmark {
     font-family: var(--font-display);

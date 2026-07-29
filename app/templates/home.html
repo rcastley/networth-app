@@ -3,6 +3,17 @@
 {% block title %}Accounts · Net Worth{% endblock %}
 
 {% block content %}
+<script>
+  (function () {
+    try {
+      if (localStorage.getItem('networth-dashboard-values-hidden') === 'true') {
+        document.documentElement.classList.add('dashboard-values-hidden');
+      }
+    } catch (_) {
+      // Privacy mode still works for this page if browser storage is unavailable.
+    }
+  })();
+</script>
 {% if account_count == 0 %}
   {# No accounts at all: dedicated empty-state, no header/cards #}
   <div class="relative bg-white rounded-2xl border border-slate-200 p-16 text-center overflow-hidden">
@@ -29,10 +40,18 @@
       {% endif %}
     </p>
   </div>
-  <a href="/accounts/new" class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-3 py-1.5 rounded-md">
-    <span class="material-symbols-outlined text-lg">add_circle</span>
-    Add account
-  </a>
+  <div class="flex items-center gap-2">
+    <button id="privacy-toggle" type="button"
+            aria-pressed="false"
+            class="inline-flex items-center gap-1 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-sm font-medium px-3 py-1.5 rounded-md">
+      <span id="privacy-toggle-icon" class="material-symbols-outlined text-lg" aria-hidden="true">visibility_off</span>
+      <span id="privacy-toggle-label">Hide values</span>
+    </button>
+    <a href="/accounts/new" class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-3 py-1.5 rounded-md">
+      <span class="material-symbols-outlined text-lg">add_circle</span>
+      Add account
+    </a>
+  </div>
 </header>
 
 {% if snapshot %}
@@ -42,74 +61,90 @@
   <div class="relative bg-white border border-slate-200 rounded-lg p-5 overflow-hidden">
     <span class="absolute inset-x-0 top-0 h-1" style="background: linear-gradient(90deg, #1D4ED8, #6366F1);"></span>
     <div class="text-xs uppercase tracking-wide text-slate-500 font-medium">Net Worth</div>
-    <div class="text-3xl font-semibold text-brand-900 mt-1 num">{{ totals.net_worth|gbp }}</div>
-    <div class="mt-1">{{ m.delta_pill(totals.net_worth, prev_totals.net_worth if prev_totals else none) }}</div>
-    <div class="relative mt-3" style="height: 36px;"><canvas id="spark-nw"></canvas></div>
+    <div class="text-3xl font-semibold text-brand-900 mt-1 num" data-private-value>{{ totals.net_worth|gbp }}</div>
+    <div class="mt-1" data-private-value>{{ m.delta_pill(totals.net_worth, prev_totals.net_worth if prev_totals else none) }}</div>
+    <div class="relative mt-3" style="height: 36px;">
+      <canvas id="spark-nw" role="img" aria-label="Net worth trend"></canvas>
+    </div>
   </div>
   <div class="relative bg-white border border-slate-200 rounded-lg p-5 overflow-hidden">
     <span class="absolute inset-x-0 top-0 h-1" style="background: linear-gradient(90deg, #059669, #10B981);"></span>
     <div class="text-xs uppercase tracking-wide text-slate-500 font-medium">Liquid (Cash + Investments)</div>
-    <div class="text-3xl font-semibold text-emerald-700 mt-1 num">{{ totals.liquid|gbp }}</div>
-    <div class="mt-1">{{ m.delta_pill(totals.liquid, prev_totals.liquid if prev_totals else none) }}</div>
-    <div class="relative mt-3" style="height: 36px;"><canvas id="spark-liquid"></canvas></div>
+    <div class="text-3xl font-semibold text-emerald-700 mt-1 num" data-private-value>{{ totals.liquid|gbp }}</div>
+    <div class="mt-1" data-private-value>{{ m.delta_pill(totals.liquid, prev_totals.liquid if prev_totals else none) }}</div>
+    <div class="relative mt-3" style="height: 36px;">
+      <canvas id="spark-liquid" role="img" aria-label="Liquid assets trend"></canvas>
+    </div>
   </div>
   <div class="relative bg-white border border-slate-200 rounded-lg p-5 overflow-hidden">
     <span class="absolute inset-x-0 top-0 h-1" style="background: linear-gradient(90deg, #64748B, #94A3B8);"></span>
     <div class="text-xs uppercase tracking-wide text-slate-500 font-medium">Net Worth + Aux</div>
-    <div class="text-3xl font-semibold text-slate-700 mt-1 num">{{ totals.net_worth_plus_aux|gbp }}</div>
-    <div class="mt-1">{{ m.delta_pill(totals.net_worth_plus_aux, prev_totals.net_worth_plus_aux if prev_totals else none) }}</div>
+    <div class="text-3xl font-semibold text-slate-700 mt-1 num" data-private-value>{{ totals.net_worth_plus_aux|gbp }}</div>
+    <div class="mt-1" data-private-value>{{ m.delta_pill(totals.net_worth_plus_aux, prev_totals.net_worth_plus_aux if prev_totals else none) }}</div>
     {# Auxiliary categories are typically constant, so no sparkline — placeholder for visual rhythm #}
     <div class="mt-3 h-[36px] flex items-center justify-center">
-      <div class="h-px w-full bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
+      <div aria-hidden="true" class="h-px w-full bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
     </div>
   </div>
 </div>
 
 {# ---------- Tabbed insight widget (collapsed by default) ---------- #}
 <div id="insight-widget" class="bg-white border border-slate-200 rounded-lg overflow-hidden mb-6 collapsed">
-  <div class="flex items-center px-2 border-b border-slate-200">
-    <button type="button" data-tab="trend" class="insight-tab active">
-      <span class="material-symbols-outlined text-base">show_chart</span>
+  <div id="insight-tablist" role="tablist" aria-label="Account insights"
+       class="flex items-center px-2 border-b border-slate-200">
+    <button id="tab-trend" type="button" role="tab" data-tab="trend"
+            aria-selected="true" aria-controls="panel-trend" tabindex="0"
+            class="insight-tab active">
+      <span aria-hidden="true" class="material-symbols-outlined text-base">show_chart</span>
       Trend
     </button>
-    <button type="button" data-tab="breakdown" class="insight-tab">
-      <span class="material-symbols-outlined text-base">table_rows</span>
+    <button id="tab-breakdown" type="button" role="tab" data-tab="breakdown"
+            aria-selected="false" aria-controls="panel-breakdown" tabindex="-1"
+            class="insight-tab">
+      <span aria-hidden="true" class="material-symbols-outlined text-base">table_rows</span>
       Breakdown
     </button>
     <button id="toggle-widget" type="button" title="Expand panel"
+            aria-label="Expand insights panel" aria-expanded="false" aria-controls="insight-panels"
             class="ml-auto inline-flex items-center justify-center w-8 h-8 my-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100">
-      <span id="toggle-widget-icon" class="material-symbols-outlined text-lg">unfold_more</span>
+      <span id="toggle-widget-icon" aria-hidden="true" class="material-symbols-outlined text-lg">unfold_more</span>
     </button>
   </div>
 
+  <div id="insight-panels">
   {# ---- Insights: Trend + Allocation side by side ---- #}
-  <div id="panel-trend" class="insight-panel p-5" style="height: 360px;">
+  <div id="panel-trend" role="tabpanel" aria-labelledby="tab-trend" tabindex="0"
+       class="insight-panel p-5" style="height: 360px;">
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 h-full">
       <div class="lg:col-span-2 flex flex-col min-h-0">
         <div class="flex items-center justify-between mb-3 shrink-0">
-          <h3 class="text-sm font-medium text-slate-600">Net Worth & Liquid over time</h3>
-          <div class="segmented">
-            <button data-period="weekly"    class="period-btn active">Weekly</button>
-            <button data-period="monthly"   class="period-btn">Monthly</button>
-            <button data-period="quarterly" class="period-btn">Quarterly</button>
+          <h3 id="trend-chart-heading" class="text-sm font-medium text-slate-600">Net Worth & Liquid over time</h3>
+          <div class="segmented" role="radiogroup" aria-label="Trend period">
+            <button data-period="weekly" role="radio" aria-checked="true" tabindex="0" class="period-btn active">Weekly</button>
+            <button data-period="monthly" role="radio" aria-checked="false" tabindex="-1" class="period-btn">Monthly</button>
+            <button data-period="quarterly" role="radio" aria-checked="false" tabindex="-1" class="period-btn">Quarterly</button>
           </div>
         </div>
         <div class="relative flex-1 min-h-0">
-          <canvas id="trendChart"></canvas>
+          <canvas id="trendChart" role="img"
+                  aria-label="Net worth and liquid balances over time"></canvas>
         </div>
       </div>
       <div class="flex flex-col min-h-0">
-        <h3 class="text-sm font-medium text-slate-600 mb-3 shrink-0">Allocation</h3>
+        <h3 id="allocation-chart-heading" class="text-sm font-medium text-slate-600 mb-3 shrink-0">Allocation</h3>
         <div class="relative flex-1 min-h-0">
-          <canvas id="allocChart"></canvas>
+          <canvas id="allocChart" role="img"
+                  aria-label="Latest net-worth allocation by category"></canvas>
         </div>
       </div>
     </div>
   </div>
 
   {# ---- Breakdown: scrollable body + sticky NW footer ---- #}
-  <div id="panel-breakdown" class="insight-panel hidden flex flex-col" style="height: 360px;">
+  <div id="panel-breakdown" role="tabpanel" aria-labelledby="tab-breakdown" tabindex="0"
+       class="insight-panel hidden flex flex-col" style="height: 360px;">
     {% include 'partials/breakdown.html' %}
+  </div>
   </div>
 </div>
 {% else %}
@@ -173,12 +208,12 @@
         <div class="flex-1"></div>
 
         {# Slot 4: balance #}
-        <div class="text-2xl font-bold num leading-tight">{% if card.current_total is not none %}{{ card.current_total|gbp }}{% else %}<span class="opacity-60">—</span>{% endif %}</div>
+        <div class="text-2xl font-bold num leading-tight" data-private-value>{% if card.current_total is not none %}{{ card.current_total|gbp }}{% else %}<span class="opacity-60">—</span>{% endif %}</div>
 
         {# Slot 5: delta (always rendered; invisible placeholder keeps height identical) #}
         {% set d = delta(card.current_total, card.previous_total) if (card.previous_total is not none and card.current_total is not none) else none %}
         {% if d and d.direction != 'flat' %}
-          <div class="text-xs num text-white/90">
+          <div class="text-xs num text-white/90" data-private-value>
             <span class="inline-flex items-center gap-0.5">
               <span class="material-symbols-outlined text-sm">{{ 'arrow_circle_up' if d.direction == 'up' else 'arrow_circle_down' }}</span>
               {{ d.abs|gbp }}{% if d.pct is not none %} ({{ '%+.2f' % d.pct }}%){% endif %}
@@ -211,9 +246,16 @@
   let trendChart, allocChart, sparkNw, sparkLiquid;
   let expandedChartsInited = false;
 
-  function renderSpark(canvasId, labels, values, color, prev) {
+  function renderSpark(canvasId, labels, values, color, accessibleName, prev) {
     const el = document.getElementById(canvasId);
     if (!el) return null;
+    if (labels.length && values.length) {
+      el.setAttribute(
+        'aria-label',
+        `${accessibleName}: ${labels.length} points from ${labels[0]} to ${labels[labels.length - 1]}; ` +
+        `latest value £${Number(values[values.length - 1]).toLocaleString()}`
+      );
+    }
     const ctx = el.getContext('2d');
     if (prev) prev.destroy();
     return new Chart(ctx, {
@@ -240,15 +282,29 @@
   async function loadSparklines() {
     const res = await fetch(`/api/chart-data?period=weekly`);
     const data = await res.json();
-    sparkNw     = renderSpark('spark-nw',     data.labels, data.net_worth, '#1D4ED8', sparkNw);
-    sparkLiquid = renderSpark('spark-liquid', data.labels, data.liquid,    '#059669', sparkLiquid);
+    sparkNw = renderSpark(
+      'spark-nw', data.labels, data.net_worth, '#1D4ED8', 'Weekly net worth trend', sparkNw
+    );
+    sparkLiquid = renderSpark(
+      'spark-liquid', data.labels, data.liquid, '#059669', 'Weekly liquid assets trend', sparkLiquid
+    );
   }
 
   // Trend chart in the (initially collapsed) tabbed widget — created on first expand
   async function loadTrend(period) {
     const res = await fetch(`/api/chart-data?period=${period}`);
     const data = await res.json();
-    const ctx = document.getElementById('trendChart').getContext('2d');
+    const canvas = document.getElementById('trendChart');
+    if (data.labels.length) {
+      canvas.setAttribute(
+        'aria-label',
+        `Net worth and liquid balances using ${period} data: ${data.labels.length} points from ` +
+        `${data.labels[0]} to ${data.labels[data.labels.length - 1]}. Latest net worth ` +
+        `£${Number(data.net_worth[data.net_worth.length - 1]).toLocaleString()} and latest liquid assets ` +
+        `£${Number(data.liquid[data.liquid.length - 1]).toLocaleString()}.`
+      );
+    }
+    const ctx = canvas.getContext('2d');
     if (trendChart) trendChart.destroy();
     trendChart = new Chart(ctx, {
       type: 'line',
@@ -286,7 +342,13 @@
         fL.push(labels[i]); fV.push(values[i]); fC.push(colors[i]);
       }
     }
-    const ctx = document.getElementById('allocChart').getContext('2d');
+    const canvas = document.getElementById('allocChart');
+    canvas.setAttribute(
+      'aria-label',
+      'Latest net-worth allocation: ' +
+      fL.map((label, i) => `${label} £${Number(fV[i]).toLocaleString()}`).join(', ')
+    );
+    const ctx = canvas.getContext('2d');
     if (allocChart) allocChart.destroy();
     allocChart = new Chart(ctx, {
       type: 'doughnut',
@@ -302,26 +364,65 @@
   }
 
   // ---- Tabs ----
-  document.querySelectorAll('.insight-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const target = btn.dataset.tab;
-      document.querySelectorAll('.insight-tab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      document.querySelectorAll('.insight-panel').forEach(p => p.classList.add('hidden'));
-      document.getElementById('panel-' + target).classList.remove('hidden');
-      // If the widget was collapsed, expand it on tab click
-      if (document.getElementById('insight-widget').classList.contains('collapsed')) {
-        setWidgetCollapsed(false);
+  const insightTabs = Array.from(document.querySelectorAll('#insight-tablist [role="tab"]'));
+
+  function activateInsightTab(btn, moveFocus = false) {
+    insightTabs.forEach(tab => {
+      const selected = tab === btn;
+      tab.classList.toggle('active', selected);
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      document.getElementById(tab.getAttribute('aria-controls')).classList.toggle('hidden', !selected);
+    });
+    if (document.getElementById('insight-widget').classList.contains('collapsed')) {
+      setWidgetCollapsed(false);
+    }
+    if (moveFocus) btn.focus();
+  }
+
+  insightTabs.forEach(btn => {
+    btn.addEventListener('click', () => activateInsightTab(btn));
+    btn.addEventListener('keydown', event => {
+      const current = insightTabs.indexOf(btn);
+      let next = null;
+      if (event.key === 'ArrowRight') next = (current + 1) % insightTabs.length;
+      if (event.key === 'ArrowLeft') next = (current - 1 + insightTabs.length) % insightTabs.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = insightTabs.length - 1;
+      if (next !== null) {
+        event.preventDefault();
+        activateInsightTab(insightTabs[next], true);
       }
     });
   });
 
   // ---- Trend period buttons ----
-  document.querySelectorAll('.period-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      loadTrend(btn.dataset.period);
+  const periodButtons = Array.from(document.querySelectorAll('.period-btn'));
+
+  function selectPeriod(btn, moveFocus = false) {
+    periodButtons.forEach(periodButton => {
+      const selected = periodButton === btn;
+      periodButton.classList.toggle('active', selected);
+      periodButton.setAttribute('aria-checked', String(selected));
+      periodButton.tabIndex = selected ? 0 : -1;
+    });
+    loadTrend(btn.dataset.period);
+    if (moveFocus) btn.focus();
+  }
+
+  periodButtons.forEach(btn => {
+    btn.addEventListener('click', () => selectPeriod(btn));
+    btn.addEventListener('keydown', event => {
+      const current = periodButtons.indexOf(btn);
+      let next = null;
+      if (event.key === 'ArrowRight') next = (current + 1) % periodButtons.length;
+      if (event.key === 'ArrowLeft') next = (current - 1 + periodButtons.length) % periodButtons.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = periodButtons.length - 1;
+      if (next !== null) {
+        event.preventDefault();
+        selectPeriod(periodButtons[next], true);
+      }
     });
   });
   loadSparklines();
@@ -335,30 +436,35 @@
         document.querySelectorAll('.parent-l2-' + pid).forEach(r => r.classList.add('hidden'));
         const chev = document.getElementById('chev-parent-' + pid);
         if (chev) chev.classList.remove('rotate-90');
+        document.querySelector('.parent-toggle[data-parent="' + pid + '"]')
+          ?.setAttribute('aria-expanded', 'false');
       });
     }
     const chev = document.getElementById('chev-cat-' + catId);
     if (chev) chev.classList.toggle('rotate-90', expanded);
+    document.querySelector('.cat-toggle[data-cat="' + catId + '"]')
+      ?.setAttribute('aria-expanded', String(expanded));
   }
 
   function setParentExpanded(parentId, expanded) {
     document.querySelectorAll('.parent-l2-' + parentId).forEach(r => r.classList.toggle('hidden', !expanded));
     const chev = document.getElementById('chev-parent-' + parentId);
     if (chev) chev.classList.toggle('rotate-90', expanded);
+    document.querySelector('.parent-toggle[data-parent="' + parentId + '"]')
+      ?.setAttribute('aria-expanded', String(expanded));
   }
 
-  document.querySelectorAll('.cat-row').forEach(row => {
-    row.addEventListener('click', () => {
-      const id = row.dataset.cat;
+  document.querySelectorAll('.cat-toggle').forEach(button => {
+    button.addEventListener('click', () => {
+      const id = button.dataset.cat;
       const anyHidden = document.querySelector('.cat-l1-' + id + '.hidden') !== null;
       setCatExpanded(id, anyHidden);
     });
   });
 
-  document.querySelectorAll('.parent-row').forEach(row => {
-    row.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const pid = row.dataset.parent;
+  document.querySelectorAll('.parent-toggle').forEach(button => {
+    button.addEventListener('click', () => {
+      const pid = button.dataset.parent;
       const anyHidden = document.querySelector('.parent-l2-' + pid + '.hidden') !== null;
       setParentExpanded(pid, anyHidden);
     });
@@ -372,6 +478,8 @@
     widget.classList.toggle('collapsed', collapsed);
     icon.textContent = collapsed ? 'unfold_more' : 'unfold_less';
     btn.title = collapsed ? 'Expand panel' : 'Collapse panel';
+    btn.setAttribute('aria-label', btn.title);
+    btn.setAttribute('aria-expanded', String(!collapsed));
     if (!collapsed) {
       // Lazy-init the trend + allocation charts the first time the user expands;
       // re-fit on each expand so canvases pick up their new container size.
@@ -390,13 +498,41 @@
 
   document.getElementById('toggle-all-cats')?.addEventListener('click', (e) => {
     const expandAll = e.target.textContent.trim() === 'Expand all';
-    document.querySelectorAll('.cat-row').forEach(row => setCatExpanded(row.dataset.cat, expandAll));
+    document.querySelectorAll('.cat-toggle').forEach(button => setCatExpanded(button.dataset.cat, expandAll));
     if (expandAll) {
-      document.querySelectorAll('.parent-row').forEach(p => setParentExpanded(p.dataset.parent, true));
+      document.querySelectorAll('.parent-toggle').forEach(button => setParentExpanded(button.dataset.parent, true));
     }
     e.target.textContent = expandAll ? 'Collapse all' : 'Expand all';
+    e.target.setAttribute('aria-expanded', String(expandAll));
   });
 </script>
 {% endif %}{# /snapshot script #}
+<script>
+  (function () {
+    const toggle = document.getElementById('privacy-toggle');
+    const icon = document.getElementById('privacy-toggle-icon');
+    const label = document.getElementById('privacy-toggle-label');
+    if (!toggle || !icon || !label) return;
+
+    function setValuesHidden(hidden) {
+      document.documentElement.classList.toggle('dashboard-values-hidden', hidden);
+      toggle.setAttribute('aria-pressed', String(hidden));
+      toggle.setAttribute('aria-label', hidden ? 'Show dashboard values' : 'Hide dashboard values');
+      toggle.title = hidden ? 'Show dashboard values' : 'Hide dashboard values';
+      icon.textContent = hidden ? 'visibility' : 'visibility_off';
+      label.textContent = hidden ? 'Show values' : 'Hide values';
+      try {
+        localStorage.setItem('networth-dashboard-values-hidden', String(hidden));
+      } catch (_) {
+        // The current-page setting remains active if browser storage is unavailable.
+      }
+    }
+
+    setValuesHidden(document.documentElement.classList.contains('dashboard-values-hidden'));
+    toggle.addEventListener('click', () => {
+      setValuesHidden(!document.documentElement.classList.contains('dashboard-values-hidden'));
+    });
+  })();
+</script>
 {% endif %}{# /account_count > 0 #}
 {% endblock %}

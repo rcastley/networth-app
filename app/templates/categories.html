@@ -6,14 +6,14 @@
 {# Native colour picker (source of truth, supports any hex) + a row of preset
    swatch shortcuts that update it. The `picker_id` lets the swatches target
    the right picker when several appear on one page. #}
-{% macro color_field(name, form_id, current, picker_id) -%}
+{% macro color_field(name, form_id, current, picker_id, accessible_label) -%}
 <div class="flex items-center gap-2">
   <input form="{{ form_id }}" type="color" name="{{ name }}" value="{{ current }}"
-         id="{{ picker_id }}"
+         id="{{ picker_id }}" aria-label="{{ accessible_label }}"
          class="w-9 h-8 cursor-pointer rounded border border-slate-300 p-0 appearance-none">
   <div class="flex flex-wrap gap-1 max-w-[180px]">
     {% for c in palette %}
-      <button type="button" title="{{ c }}"
+      <button type="button" title="{{ c }}" aria-label="Set {{ accessible_label|lower }} to {{ c }}"
               onclick="document.getElementById('{{ picker_id }}').value='{{ c }}';"
               style="background: {{ c }};"
               class="w-5 h-5 rounded cursor-pointer hover:scale-110 transition-transform shadow-sm ring-1 ring-slate-200/60"></button>
@@ -35,9 +35,13 @@
 </p>
 
 {% for cat in categories %}
-  <form id="cat-form-{{ cat.id }}" method="post" action="/categories/{{ cat.id }}"></form>
+  <form id="cat-form-{{ cat.id }}" method="post" action="/categories/{{ cat.id }}">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+  </form>
   <form id="cat-del-{{ cat.id }}"  method="post" action="/categories/{{ cat.id }}/delete"
-        data-confirm="Delete category {{ cat.name }}? Reassign its accounts first."></form>
+        data-confirm="Delete category {{ cat.name }}? Reassign its accounts first.">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+  </form>
 {% endfor %}
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -57,30 +61,36 @@
         {% for cat in categories %}
         <tr>
           <td class="px-4 py-2">
-            <input form="cat-form-{{ cat.id }}" name="name" value="{{ cat.name }}"
+            <label for="cat-name-{{ cat.id }}" class="sr-only">Category name</label>
+            <input id="cat-name-{{ cat.id }}" form="cat-form-{{ cat.id }}" name="name" value="{{ cat.name }}"
                    class="w-full border border-transparent hover:border-slate-300 focus:border-brand-500 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-brand-500">
           </td>
           <td class="px-4 py-2 text-center">
-            <input form="cat-form-{{ cat.id }}" type="checkbox" name="in_net_worth"
+            <input id="cat-net-worth-{{ cat.id }}" form="cat-form-{{ cat.id }}" type="checkbox" name="in_net_worth"
+                   aria-label="Include {{ cat.name }} in net worth"
                    {% if cat.in_net_worth %}checked{% endif %} class="rounded">
           </td>
           <td class="px-4 py-2 text-center">
-            <input form="cat-form-{{ cat.id }}" type="checkbox" name="in_liquid"
+            <input id="cat-liquid-{{ cat.id }}" form="cat-form-{{ cat.id }}" type="checkbox" name="in_liquid"
+                   aria-label="Include {{ cat.name }} in liquid assets"
                    {% if cat.in_liquid %}checked{% endif %} class="rounded">
           </td>
           <td class="px-4 py-2 text-center">
-            <input form="cat-form-{{ cat.id }}" type="checkbox" name="is_liability"
+            <input id="cat-liability-{{ cat.id }}" form="cat-form-{{ cat.id }}" type="checkbox" name="is_liability"
+                   aria-label="Mark {{ cat.name }} as a liability"
                    {% if cat.is_liability %}checked{% endif %} class="rounded">
           </td>
           <td class="px-4 py-2">
-            {{ color_field('color', 'cat-form-' ~ cat.id, cat.color, 'cat-color-' ~ cat.id) }}
+            {{ color_field('color', 'cat-form-' ~ cat.id, cat.color, 'cat-color-' ~ cat.id, 'Color for ' ~ cat.name) }}
           </td>
           <td class="px-4 py-2 text-right whitespace-nowrap">
             <button form="cat-form-{{ cat.id }}" title="Save changes"
+                    aria-label="Save changes to {{ cat.name }}"
                     class="inline-flex items-center text-brand-700 hover:text-brand-900 align-middle">
               <span class="material-symbols-outlined text-xl">check_circle</span>
             </button>
             <button form="cat-del-{{ cat.id }}" title="Delete category"
+                    aria-label="Delete category {{ cat.name }}"
                     class="inline-flex items-center text-red-600 hover:text-red-800 align-middle ml-2">
               <span class="material-symbols-outlined text-xl">delete</span>
             </button>
@@ -94,9 +104,10 @@
   <section class="bg-white border border-slate-200 rounded-lg p-5 h-fit">
     <h2 class="font-semibold text-slate-800 mb-3">Add category</h2>
     <form method="post" action="/categories" class="space-y-3">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
       <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Name</label>
-        <input name="name" required class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+        <label for="new-cat-name" class="block text-xs font-medium text-slate-600 mb-1">Name</label>
+        <input id="new-cat-name" name="name" required class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
       </div>
       <label class="flex items-center gap-2 text-sm">
         <input type="checkbox" name="in_net_worth" checked class="rounded"> In Net Worth
@@ -108,13 +119,13 @@
         <input type="checkbox" name="is_liability" class="rounded"> Is a Liability
       </label>
       <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Color</label>
+        <label for="new-cat-color" class="block text-xs font-medium text-slate-600 mb-1">Color</label>
         <div class="flex items-center gap-2">
           <input type="color" name="color" value="#64748B" id="new-cat-color"
                  class="w-9 h-8 cursor-pointer rounded border border-slate-300 p-0 appearance-none">
           <div class="flex flex-wrap gap-1 max-w-[180px]">
             {% for c in palette %}
-              <button type="button" title="{{ c }}"
+              <button type="button" title="{{ c }}" aria-label="Set new category color to {{ c }}"
                       onclick="document.getElementById('new-cat-color').value='{{ c }}';"
                       style="background: {{ c }};"
                       class="w-5 h-5 rounded cursor-pointer hover:scale-110 transition-transform shadow-sm ring-1 ring-slate-200/60"></button>

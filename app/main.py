@@ -1,6 +1,11 @@
 """FastAPI app for the Net Worth Tracker."""
 import csv
+import hashlib
+import hmac
 import io
+import logging
+import os
+import secrets
 import yaml
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -18,10 +23,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
-from .db import Base, engine, get_db, SessionLocal
+from .db import Base, engine, get_db, SessionLocal, assert_foreign_key_integrity
 from .models import Category, Account, Snapshot, Balance
 from .seed import seed_if_empty
 from . import services
+
+
+logger = logging.getLogger("networth")
 
 
 # Server-side dictionary of toast messages. base.html resolves the key sent in
@@ -58,6 +66,9 @@ def _run_migrations() -> None:
     from alembic.config import Config
     from alembic import command
 
+    with SessionLocal() as db:
+        assert_foreign_key_integrity(db)
+
     inspector = inspect(engine)
     existing = set(inspector.get_table_names())
 
@@ -80,6 +91,7 @@ _run_migrations()
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     with SessionLocal() as db:
+        services.assert_account_hierarchy_integrity(db)
         seed_if_empty(db)
     yield
 
@@ -89,6 +101,63 @@ app = FastAPI(title="Net Worth Tracker", lifespan=_lifespan)
 BASE_DIR = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+CSRF_COOKIE_NAME = "csrf"
+CSRF_SECRET = os.environ.get("CSRF_SECRET", "").encode() or secrets.token_bytes(32)
+CSRF_COOKIE_SECURE = os.environ.get("CSRF_COOKIE_SECURE", "").lower() in {
+    "1", "true", "yes", "on",
+}
+
+
+def _new_csrf_token() -> str:
+    value = secrets.token_urlsafe(32)
+    signature = hmac.new(CSRF_SECRET, value.encode(), hashlib.sha256).hexdigest()
+    return f"{value}.{signature}"
+
+
+def _valid_csrf_token(token: Optional[str]) -> bool:
+    if not token or len(token) > 256 or "." not in token:
+        return False
+    value, signature = token.rsplit(".", 1)
+    expected = hmac.new(CSRF_SECRET, value.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature, expected)
+
+
+def _require_csrf(request: Request, csrf_token: str = Form("")) -> None:
+    cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
+    if (
+        not _valid_csrf_token(cookie_token)
+        or not hmac.compare_digest(cookie_token, csrf_token)
+    ):
+        logger.warning(
+            "CSRF validation failed",
+            extra={
+                "event": "csrf_validation_failed",
+                "method": request.method,
+                "path": request.url.path,
+            },
+        )
+        raise HTTPException(403, "Security token invalid or expired. Refresh the page and try again.")
+
+
+@app.middleware("http")
+async def csrf_cookie_middleware(request: Request, call_next):
+    token = request.cookies.get(CSRF_COOKIE_NAME)
+    set_cookie = not _valid_csrf_token(token)
+    if set_cookie:
+        token = _new_csrf_token()
+    request.state.csrf_token = token
+    response = await call_next(request)
+    if set_cookie:
+        response.set_cookie(
+            CSRF_COOKIE_NAME,
+            token,
+            httponly=True,
+            secure=CSRF_COOKIE_SECURE,
+            samesite="strict",
+            path="/",
+        )
+    return response
 
 
 def _dt_display(value) -> str:
@@ -182,7 +251,7 @@ templates.env.globals["toast_messages"] = TOAST_MESSAGES
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, db: Session = Depends(get_db)):
     latest = services.latest_snapshot(db)
-    previous = services.previous_snapshot(db, latest.snapshot_date) if latest else None
+    previous = services.previous_snapshot(db, latest) if latest else None
     totals = services.snapshot_totals(latest) if latest else None
     prev_totals = services.snapshot_totals(previous) if previous else None
     snaps_count = db.scalar(select(func.count(Snapshot.id))) or 0
@@ -326,7 +395,11 @@ def snapshot_new_form(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/snapshots")
-async def snapshot_create(request: Request, db: Session = Depends(get_db)):
+async def snapshot_create(
+    request: Request,
+    _csrf: None = Depends(_require_csrf),
+    db: Session = Depends(get_db),
+):
     if not services.active_leaf_accounts(db):
         raise HTTPException(400, "Add at least one account before creating a snapshot.")
     form = await request.form()
@@ -372,7 +445,12 @@ def snapshot_edit_form(snap_id: int, request: Request, db: Session = Depends(get
 
 
 @app.post("/snapshots/{snap_id}")
-async def snapshot_update(snap_id: int, request: Request, db: Session = Depends(get_db)):
+async def snapshot_update(
+    snap_id: int,
+    request: Request,
+    _csrf: None = Depends(_require_csrf),
+    db: Session = Depends(get_db),
+):
     snap = db.get(Snapshot, snap_id)
     if not snap:
         raise HTTPException(404)
@@ -397,7 +475,11 @@ async def snapshot_update(snap_id: int, request: Request, db: Session = Depends(
 
 
 @app.post("/snapshots/{snap_id}/delete")
-def snapshot_delete(snap_id: int, db: Session = Depends(get_db)):
+def snapshot_delete(
+    snap_id: int,
+    _csrf: None = Depends(_require_csrf),
+    db: Session = Depends(get_db),
+):
     snap = db.get(Snapshot, snap_id)
     if not snap:
         raise HTTPException(404)
@@ -412,7 +494,7 @@ def snapshot_delete(snap_id: int, db: Session = Depends(get_db)):
 def account_new_form(request: Request, db: Session = Depends(get_db)):
     categories = services.all_categories(db)
     all_accounts = list(db.scalars(select(Account).order_by(Account.sort_order, Account.id)))
-    groups = [a for a in all_accounts if a.is_group]
+    groups = [a for a in all_accounts if a.is_group and a.parent_id is None]
     return templates.TemplateResponse(
         "account_new.html",
         {
@@ -431,7 +513,10 @@ def account_detail(acc_id: int, request: Request, db: Session = Depends(get_db))
         raise HTTPException(404, f"Account {acc_id} not found.")
     categories = services.all_categories(db)
     all_accounts = list(db.scalars(select(Account).order_by(Account.sort_order, Account.id)))
-    groups = [a for a in all_accounts if a.is_group and a.id != acc.id]
+    groups = [
+        a for a in all_accounts
+        if a.is_group and a.parent_id is None and a.id != acc.id
+    ]
 
     # Per-account history for sparkline + recent values.
     # Recent values is a scrollable list in the UI; cap at 500 so a hyperactive
@@ -447,6 +532,7 @@ def account_detail(acc_id: int, request: Request, db: Session = Depends(get_db))
 
     children = sorted(acc.children, key=lambda c: (c.sort_order, c.id)) if acc.is_group else []
     children_latest = services.latest_balances_for_accounts(db, children)
+    children_history = services.account_histories(db, children)
 
     return templates.TemplateResponse(
         "account_detail.html",
@@ -460,12 +546,17 @@ def account_detail(acc_id: int, request: Request, db: Session = Depends(get_db))
             "recent":          recent,
             "children":        children,
             "children_latest": children_latest,
+            "children_history": children_history,
         },
     )
 
 
 @app.post("/accounts")
-async def account_create(request: Request, db: Session = Depends(get_db)):
+async def account_create(
+    request: Request,
+    _csrf: None = Depends(_require_csrf),
+    db: Session = Depends(get_db),
+):
     form = await request.form()
     name = (form.get("name") or "").strip()
     category_id = int(form.get("category_id"))
@@ -478,6 +569,13 @@ async def account_create(request: Request, db: Session = Depends(get_db)):
     logo_url           = _validated_logo_url(form.get("logo_url"))
     if not name:
         raise HTTPException(400, "Name is required")
+    _validate_account_hierarchy(
+        db,
+        account_id=None,
+        is_group=is_group,
+        parent_id=parent_id,
+        has_children=False,
+    )
     acc = Account(
         name=name, category_id=category_id, notes=notes,
         is_active=True,
@@ -490,7 +588,12 @@ async def account_create(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/accounts/{acc_id}")
-async def account_update(acc_id: int, request: Request, db: Session = Depends(get_db)):
+async def account_update(
+    acc_id: int,
+    request: Request,
+    _csrf: None = Depends(_require_csrf),
+    db: Session = Depends(get_db),
+):
     acc = db.get(Account, acc_id)
     if not acc:
         raise HTTPException(404)
@@ -501,12 +604,18 @@ async def account_update(acc_id: int, request: Request, db: Session = Depends(ge
         _ensure_category(db, new_cat)
         acc.category_id = new_cat
     acc.notes = (form.get("notes") or "").strip()
-    acc.is_active = form.get("is_active") == "on"
-    acc.is_group  = form.get("is_group")  == "on"
+    new_is_group = form.get("is_group") == "on"
     parent_raw = (form.get("parent_id") or "").strip()
     new_parent = int(parent_raw) if parent_raw else None
-    if new_parent is not None and _would_cycle(db, acc.id, new_parent):
-        raise HTTPException(400, "Setting that parent would create a cycle.")
+    _validate_account_hierarchy(
+        db,
+        account_id=acc.id,
+        is_group=new_is_group,
+        parent_id=new_parent,
+        has_children=bool(acc.children),
+    )
+    acc.is_active = form.get("is_active") == "on"
+    acc.is_group = new_is_group
     acc.parent_id = new_parent
     acc.institution_domain = (form.get("institution_domain") or "").strip() or None
     acc.logo_url           = _validated_logo_url(form.get("logo_url"))
@@ -520,10 +629,19 @@ async def account_update(acc_id: int, request: Request, db: Session = Depends(ge
 
 
 @app.post("/accounts/{acc_id}/delete")
-def account_delete(acc_id: int, db: Session = Depends(get_db)):
+def account_delete(
+    acc_id: int,
+    _csrf: None = Depends(_require_csrf),
+    db: Session = Depends(get_db),
+):
     acc = db.get(Account, acc_id)
     if not acc:
         raise HTTPException(404)
+    if acc.children:
+        raise HTTPException(
+            409,
+            "Move or delete this group's sub-accounts before deleting the group.",
+        )
     db.delete(acc)
     db.commit()
     return _redirect_with_toast("/", "account-deleted")
@@ -541,7 +659,11 @@ def categories_page(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/categories")
-async def category_create(request: Request, db: Session = Depends(get_db)):
+async def category_create(
+    request: Request,
+    _csrf: None = Depends(_require_csrf),
+    db: Session = Depends(get_db),
+):
     form = await request.form()
     name = (form.get("name") or "").strip()
     if not name:
@@ -559,7 +681,12 @@ async def category_create(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/categories/{cat_id}")
-async def category_update(cat_id: int, request: Request, db: Session = Depends(get_db)):
+async def category_update(
+    cat_id: int,
+    request: Request,
+    _csrf: None = Depends(_require_csrf),
+    db: Session = Depends(get_db),
+):
     cat = db.get(Category, cat_id)
     if not cat:
         raise HTTPException(404)
@@ -579,7 +706,11 @@ async def category_update(cat_id: int, request: Request, db: Session = Depends(g
 
 
 @app.post("/categories/{cat_id}/delete")
-def category_delete(cat_id: int, db: Session = Depends(get_db)):
+def category_delete(
+    cat_id: int,
+    _csrf: None = Depends(_require_csrf),
+    db: Session = Depends(get_db),
+):
     cat = db.get(Category, cat_id)
     if not cat:
         raise HTTPException(404)
@@ -631,6 +762,33 @@ def _validated_logo_url(value: Optional[str]) -> Optional[str]:
 def _ensure_category(db: Session, category_id: int) -> None:
     if db.get(Category, category_id) is None:
         raise HTTPException(400, f"Category {category_id} does not exist.")
+
+
+def _validate_account_hierarchy(
+    db: Session,
+    *,
+    account_id: Optional[int],
+    is_group: bool,
+    parent_id: Optional[int],
+    has_children: bool,
+) -> None:
+    """Enforce the supported top-level-group → leaf-account hierarchy."""
+    if is_group and parent_id is not None:
+        raise HTTPException(400, "Groups must be top-level accounts.")
+    if has_children and not is_group:
+        raise HTTPException(400, "Move or delete sub-accounts before converting this group.")
+    if parent_id is None:
+        return
+
+    parent = db.get(Account, parent_id)
+    if parent is None:
+        raise HTTPException(400, f"Parent account {parent_id} does not exist.")
+    if not parent.is_group:
+        raise HTTPException(400, "The parent account must be a group.")
+    if parent.parent_id is not None:
+        raise HTTPException(400, "Nested groups are not supported.")
+    if account_id is not None and _would_cycle(db, account_id, parent_id):
+        raise HTTPException(400, "Setting that parent would create a cycle.")
 
 
 def _would_cycle(db: Session, acc_id: int, new_parent_id: int) -> bool:
@@ -700,6 +858,7 @@ async def import_csv(
     request: Request,
     file: UploadFile = File(...),
     mode: str = Form("skip"),
+    _csrf: None = Depends(_require_csrf),
     db: Session = Depends(get_db),
 ):
     """Import snapshots from a wide-format CSV.
@@ -838,6 +997,33 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "errors":      exc.errors(),
         },
         status_code=422,
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.error(
+        "Unhandled request error",
+        extra={
+            "event": "unhandled_request_error",
+            "method": request.method,
+            "path": request.url.path,
+        },
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    if not _wants_html(request):
+        return JSONResponse({"detail": "Internal Server Error"}, status_code=500)
+    return templates.TemplateResponse(
+        "error.html",
+        {
+            "request": request,
+            "view_id": "error",
+            "status_code": 500,
+            "title": _STATUS_TITLES[500],
+            "detail": "The request could not be completed.",
+            "hint": "Check the application logs for the error reference and try again.",
+        },
+        status_code=500,
     )
 
 

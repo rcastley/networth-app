@@ -20,14 +20,15 @@
   <section class="bg-white border border-slate-200 rounded-lg p-5">
     <h2 class="font-semibold text-slate-800 mb-2">Import</h2>
     <form method="post" action="/import" enctype="multipart/form-data" class="space-y-3">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
       <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">CSV file</label>
-        <input type="file" name="file" accept=".csv,text/csv" required
+        <label for="import-file" class="block text-xs font-medium text-slate-600 mb-1">CSV file</label>
+        <input id="import-file" type="file" name="file" accept=".csv,text/csv" required
                class="block w-full text-sm border border-slate-300 rounded p-2">
       </div>
       <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">If a snapshot for the date already exists</label>
-        <select name="mode" class="border border-slate-300 rounded px-3 py-2 text-sm">
+        <label for="import-mode" class="block text-xs font-medium text-slate-600 mb-1">If a snapshot for the date already exists</label>
+        <select id="import-mode" name="mode" class="border border-slate-300 rounded px-3 py-2 text-sm">
           <option value="skip" selected>Skip (keep existing)</option>
           <option value="overwrite">Overwrite (replace with imported values)</option>
         </select>

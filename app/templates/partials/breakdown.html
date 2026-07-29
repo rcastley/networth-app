@@ -6,7 +6,8 @@
 {% import 'partials/_macros.html' as m %}
 
 <div class="px-5 py-2 border-b border-slate-200 flex items-center justify-end shrink-0">
-  <button id="toggle-all-cats" type="button" class="text-xs text-slate-500 hover:text-brand-700">Expand all</button>
+  <button id="toggle-all-cats" type="button" aria-expanded="false"
+          class="text-xs text-slate-500 hover:text-brand-700">Expand all</button>
 </div>
 <div class="overflow-y-auto flex-1 min-h-0">
 <table class="w-full text-sm">
@@ -21,13 +22,17 @@
     {% for row in totals.by_category %}
       {% set cat = row.category %}
       {% set prev_cat_total = prev_totals.category_map.get(cat.name) if prev_totals else none %}
-      <tr class="cat-row hover:bg-slate-50 cursor-pointer select-none" data-cat="{{ cat.id }}">
+      <tr class="cat-row hover:bg-slate-50" data-cat="{{ cat.id }}">
         <td class="px-5 py-2">
-          <span id="chev-cat-{{ cat.id }}" class="material-symbols-outlined chev text-base text-slate-400 transition-transform mr-1">chevron_right</span>
-          <span class="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle" style="background:{{ cat.color }}"></span>
-          <span class="font-medium">{{ cat.name }}</span>
-          {% if not cat.in_net_worth %}<span class="ml-1 text-xs text-slate-400">(aux)</span>{% endif %}
-          <span class="ml-2 text-xs text-slate-400">{{ row.rows|length }} {% if row.rows|length == 1 %}item{% else %}items{% endif %}</span>
+          <button type="button" class="cat-toggle inline-flex items-center text-left"
+                  data-cat="{{ cat.id }}" aria-expanded="false">
+            <span id="chev-cat-{{ cat.id }}" aria-hidden="true"
+                  class="material-symbols-outlined chev text-base text-slate-400 transition-transform mr-1">chevron_right</span>
+            <span aria-hidden="true" class="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle" style="background:{{ cat.color }}"></span>
+            <span class="font-medium">{{ cat.name }}</span>
+            {% if not cat.in_net_worth %}<span class="ml-1 text-xs text-slate-400">(aux)</span>{% endif %}
+            <span class="ml-2 text-xs text-slate-400">{{ row.rows|length }} {% if row.rows|length == 1 %}item{% else %}items{% endif %}</span>
+          </button>
         </td>
         <td class="px-5 py-2 text-right">
           <div class="num {% if row.total < 0 %}text-red-600{% endif %}">{{ row.total|gbp }}</div>
@@ -40,12 +45,16 @@
       {% for item in row.rows %}
         {% if item.type == 'group' %}
           {% set pid = item.parent.id %}
-          <tr class="cat-l1 cat-l1-{{ cat.id }} parent-row hover:bg-slate-50 cursor-pointer hidden bg-slate-50/60" data-parent="{{ pid }}">
+          <tr class="cat-l1 cat-l1-{{ cat.id }} parent-row hover:bg-slate-50 hidden bg-slate-50/60" data-parent="{{ pid }}">
             <td class="px-5 py-1.5 pl-10">
-              <span id="chev-parent-{{ pid }}" class="material-symbols-outlined chev text-sm text-slate-400 transition-transform mr-1">chevron_right</span>
-              <span class="font-medium">{{ item.parent.name }}</span>
-              {% if item.parent.notes %}<span class="ml-1 text-xs text-slate-400">· {{ item.parent.notes }}</span>{% endif %}
-              <span class="ml-2 text-xs text-slate-400">{{ item.children|length }} accounts</span>
+              <button type="button" class="parent-toggle inline-flex items-center text-left"
+                      data-parent="{{ pid }}" aria-expanded="false">
+                <span id="chev-parent-{{ pid }}" aria-hidden="true"
+                      class="material-symbols-outlined chev text-sm text-slate-400 transition-transform mr-1">chevron_right</span>
+                <span class="font-medium">{{ item.parent.name }}</span>
+                {% if item.parent.notes %}<span class="ml-1 text-xs text-slate-400">· {{ item.parent.notes }}</span>{% endif %}
+                <span class="ml-2 text-xs text-slate-400">{{ item.children|length }} accounts</span>
+              </button>
             </td>
             <td class="px-5 py-1.5 text-right num text-slate-700 {% if item.total < 0 %}text-red-600{% endif %}">{{ item.total|gbp }}</td>
             <td class="px-5 py-1.5 text-right text-xs text-slate-400 num">

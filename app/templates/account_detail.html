@@ -53,28 +53,35 @@
 <div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
 
   <!-- Tab strip -->
-  <div class="flex items-center px-2 border-b border-slate-200">
-    <button type="button" data-tab="summary" class="insight-tab active">
-      <span class="material-symbols-outlined text-base">show_chart</span>
+  <div id="account-tablist" role="tablist" aria-label="Account details"
+       class="flex items-center px-2 border-b border-slate-200">
+    <button id="tab-summary" type="button" role="tab" data-tab="summary"
+            aria-selected="true" aria-controls="acc-panel-summary" tabindex="0"
+            class="insight-tab active">
+      <span aria-hidden="true" class="material-symbols-outlined text-base">show_chart</span>
       Summary
     </button>
-    <button type="button" data-tab="edit" class="insight-tab">
-      <span class="material-symbols-outlined text-base">edit</span>
+    <button id="tab-edit" type="button" role="tab" data-tab="edit"
+            aria-selected="false" aria-controls="acc-panel-edit" tabindex="-1"
+            class="insight-tab">
+      <span aria-hidden="true" class="material-symbols-outlined text-base">edit</span>
       Edit
     </button>
   </div>
 
   <!-- ============ Summary tab ============ -->
-  <div id="acc-panel-summary" class="acc-panel p-6">
+  <div id="acc-panel-summary" role="tabpanel" aria-labelledby="tab-summary" tabindex="0"
+       class="acc-panel p-6">
     <div class="grid grid-cols-1 {% if account.is_group and children %}lg:grid-cols-2{% endif %} gap-6">
 
       {# Left: trend chart + recent values (stacked) #}
       <div class="space-y-6">
         <section>
-          <h2 class="font-semibold text-slate-800 mb-3">Trend</h2>
+          <h2 id="account-trend-heading" class="font-semibold text-slate-800 mb-3">Trend</h2>
           {% if history|length >= 2 %}
             <div class="relative" style="height: 200px;">
-              <canvas id="account-spark"></canvas>
+              <canvas id="account-spark" role="img"
+                      aria-label="Balance trend for {{ account.name }} across {{ history|length }} snapshots"></canvas>
             </div>
           {% else %}
             <p class="text-xs text-slate-400">Need at least two snapshots to draw a trend. Take another one to see the line.</p>
@@ -126,8 +133,10 @@
               {% for child in children %}
                 {% set child_lg = account_logo(child) %}
                 {% set latest = children_latest.get(child.id) %}
+                {% set child_history = children_history.get(child.id, []) %}
                 <li>
-                  <a href="/accounts/{{ child.id }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50">
+                  <a href="/accounts/{{ child.id }}"
+                     class="grid grid-cols-[1.5rem_minmax(0,1fr)_5rem_7rem] sm:grid-cols-[1.5rem_minmax(0,1fr)_6rem_8rem] items-center gap-3 px-4 py-2.5 hover:bg-slate-50">
                     {% if child_lg.primary %}
                       <img src="{{ child_lg.primary }}" alt="" loading="lazy"
                            class="w-6 h-6 rounded object-scale-down bg-white border border-slate-200 account-logo shrink-0"
@@ -136,11 +145,20 @@
                     {% else %}
                       <div class="w-6 h-6 rounded border border-dashed border-slate-200 shrink-0"></div>
                     {% endif %}
-                    <div class="min-w-0 flex-1">
+                    <div class="min-w-0">
                       <div class="text-sm font-medium text-slate-800 truncate">{{ child.name }}</div>
                       {% if child.notes %}<div class="text-xs text-slate-400 truncate">{{ child.notes }}</div>{% endif %}
                     </div>
-                    <div class="text-sm num text-slate-700 whitespace-nowrap {% if latest is not none and latest < 0 %}text-red-600{% endif %}">
+                    <div class="relative w-full h-9">
+                      {% if child_history|length >= 2 %}
+                        <canvas id="child-spark-{{ child.id }}"
+                                role="img"
+                                aria-label="Balance trend for {{ child.name }} across {{ child_history|length }} snapshots"></canvas>
+                      {% else %}
+                        <span class="flex h-full items-center justify-center text-[10px] text-slate-400">No trend yet</span>
+                      {% endif %}
+                    </div>
+                    <div class="text-sm num text-right text-slate-700 whitespace-nowrap {% if latest is not none and latest < 0 %}text-red-600{% endif %}">
                       {% if latest is not none %}{{ latest|gbp }}{% else %}<span class="text-slate-400">—</span>{% endif %}
                     </div>
                   </a>
@@ -156,27 +174,31 @@
   </div>
 
   <!-- ============ Edit tab ============ -->
-  <div id="acc-panel-edit" class="acc-panel p-6 hidden">
+  <div id="acc-panel-edit" role="tabpanel" aria-labelledby="tab-edit" tabindex="0"
+       class="acc-panel p-6 hidden">
     <div class="flex items-center justify-end mb-4">
       <form method="post" action="/accounts/{{ account.id }}/delete"
             data-confirm="Delete {{ account.name }} and all its balance history? This cannot be undone.">
-        <button class="inline-flex items-center gap-1 text-red-600 hover:text-red-800 text-sm">
-          <span class="material-symbols-outlined text-base">delete</span>
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+        <button aria-label="Delete account {{ account.name }}"
+                class="inline-flex items-center gap-1 text-red-600 hover:text-red-800 text-sm">
+          <span aria-hidden="true" class="material-symbols-outlined text-base">delete</span>
           Delete account
         </button>
       </form>
     </div>
 
     <form method="post" action="/accounts/{{ account.id }}" class="space-y-4 max-w-3xl">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Name</label>
-          <input name="name" required value="{{ account.name }}"
+          <label for="acc-edit-name" class="block text-xs font-medium text-slate-600 mb-1">Name</label>
+          <input id="acc-edit-name" name="name" required value="{{ account.name }}"
                  class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
         </div>
         <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Category</label>
-          <select name="category_id" class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+          <label for="acc-edit-category" class="block text-xs font-medium text-slate-600 mb-1">Category</label>
+          <select id="acc-edit-category" name="category_id" class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
             {% for c in categories %}
               <option value="{{ c.id }}" {% if c.id == account.category_id %}selected{% endif %}>{{ c.name }}</option>
             {% endfor %}
@@ -185,18 +207,19 @@
       </div>
 
       <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Parent group</label>
-        <select name="parent_id" class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+        <label for="acc-edit-parent" class="block text-xs font-medium text-slate-600 mb-1">Parent group</label>
+        <select id="acc-edit-parent" name="parent_id" class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
           <option value="">— (top-level)</option>
           {% for g in groups %}
             <option value="{{ g.id }}" {% if g.id == account.parent_id %}selected{% endif %}>{{ g.name }}</option>
           {% endfor %}
         </select>
+        <p class="text-xs text-slate-400 mt-1">Only leaf accounts can have a parent; groups always remain top-level.</p>
       </div>
 
       <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Notes</label>
-        <input name="notes" value="{{ account.notes }}"
+        <label for="acc-edit-notes" class="block text-xs font-medium text-slate-600 mb-1">Notes</label>
+        <input id="acc-edit-notes" name="notes" value="{{ account.notes }}"
                class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
       </div>
 
@@ -204,15 +227,15 @@
         <legend class="text-xs font-medium text-slate-600 px-1">Institution &amp; logo</legend>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs text-slate-500 mb-1">Domain</label>
-            <input name="institution_domain" value="{{ account.institution_domain or '' }}"
+            <label for="acc-edit-domain" class="block text-xs text-slate-500 mb-1">Domain</label>
+            <input id="acc-edit-domain" name="institution_domain" value="{{ account.institution_domain or '' }}"
                    placeholder="e.g. chase.com"
                    class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
             <p class="text-xs text-slate-400 mt-1">Logo is fetched from <code>logo.clearbit.com</code>, with a favicon fallback. Children inherit if blank.</p>
           </div>
           <div>
-            <label class="block text-xs text-slate-500 mb-1">Logo URL (override)</label>
-            <input name="logo_url" value="{{ account.logo_url or '' }}"
+            <label for="acc-edit-logo" class="block text-xs text-slate-500 mb-1">Logo URL (override)</label>
+            <input id="acc-edit-logo" name="logo_url" value="{{ account.logo_url or '' }}"
                    placeholder="https://..."
                    class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
             <p class="text-xs text-slate-400 mt-1">Direct URL to an image; takes priority over the domain lookup.</p>
@@ -222,11 +245,11 @@
 
       <div class="flex items-center gap-6">
         <label class="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="is_group" {% if account.is_group %}checked{% endif %} class="rounded">
+          <input id="acc-edit-is-group" type="checkbox" name="is_group" {% if account.is_group %}checked{% endif %} class="rounded">
           Group (folder for child accounts; no balance of its own)
         </label>
         <label class="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="is_active" {% if account.is_active %}checked{% endif %} class="rounded">
+          <input id="acc-edit-is-active" type="checkbox" name="is_active" {% if account.is_active %}checked{% endif %} class="rounded">
           Active
         </label>
       </div>
@@ -248,15 +271,45 @@
 
 <script>
   // ---- Tab switching (Summary / Edit) ----
-  document.querySelectorAll('.insight-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const target = btn.dataset.tab;
-      document.querySelectorAll('.insight-tab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      document.querySelectorAll('.acc-panel').forEach(p => p.classList.add('hidden'));
-      document.getElementById('acc-panel-' + target).classList.remove('hidden');
+  const accountTabs = Array.from(document.querySelectorAll('#account-tablist [role="tab"]'));
+
+  function activateAccountTab(btn, moveFocus = false) {
+    accountTabs.forEach(tab => {
+      const selected = tab === btn;
+      tab.classList.toggle('active', selected);
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      document.getElementById(tab.getAttribute('aria-controls')).classList.toggle('hidden', !selected);
+    });
+    if (moveFocus) btn.focus();
+  }
+
+  accountTabs.forEach(btn => {
+    btn.addEventListener('click', () => activateAccountTab(btn));
+    btn.addEventListener('keydown', event => {
+      const current = accountTabs.indexOf(btn);
+      let next = null;
+      if (event.key === 'ArrowRight') next = (current + 1) % accountTabs.length;
+      if (event.key === 'ArrowLeft') next = (current - 1 + accountTabs.length) % accountTabs.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = accountTabs.length - 1;
+      if (next !== null) {
+        event.preventDefault();
+        activateAccountTab(accountTabs[next], true);
+      }
     });
   });
+
+  const groupCheckbox = document.getElementById('acc-edit-is-group');
+  const parentSelect = document.getElementById('acc-edit-parent');
+  if (groupCheckbox && parentSelect) {
+    function syncParentAvailability() {
+      if (groupCheckbox.checked) parentSelect.value = '';
+      parentSelect.disabled = groupCheckbox.checked;
+    }
+    groupCheckbox.addEventListener('change', syncParentAvailability);
+    syncParentAvailability();
+  }
 </script>
 
 {% if history|length >= 2 %}
@@ -286,6 +339,50 @@
         }
       }
     });
+  })();
+</script>
+{% endif %}
+
+{% if account.is_group and children %}
+<script>
+  (function () {
+    const sparkOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: false },
+      },
+      scales: {
+        x: { display: false },
+        y: { display: false },
+      },
+      elements: {
+        point: { radius: 0 },
+        line: { borderWidth: 1.5, tension: 0.25 },
+      },
+    };
+
+    {% for child in children %}
+      {% set child_history = children_history.get(child.id, []) %}
+      {% if child_history|length >= 2 %}
+        new Chart(document.getElementById('child-spark-{{ child.id }}'), {
+          type: 'line',
+          data: {
+            labels: {{ child_history | map(attribute=0) | map('string') | list | tojson }},
+            datasets: [{
+              data: {{ child_history | map(attribute=1) | map('float') | list | tojson }},
+              borderColor: {{ child.category.color | tojson }},
+              backgroundColor: {{ (child.category.color ~ '18') | tojson }},
+              fill: true,
+            }],
+          },
+          options: sparkOptions,
+        });
+      {% endif %}
+    {% endfor %}
   })();
 </script>
 {% endif %}

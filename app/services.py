@@ -1,10 +1,9 @@
 """Business logic: totals, aggregations, deltas."""
 from decimal import Decimal
 from collections import defaultdict
-from datetime import date
 from typing import Optional
-from sqlalchemy.orm import Session, joinedload, selectinload
-from sqlalchemy import select, func
+from sqlalchemy.orm import Session, joinedload, selectinload  # type: ignore
+from sqlalchemy import and_, func, or_, select  # type: ignore
 from .models import Snapshot, Balance, Account, Category
 
 
@@ -119,27 +118,40 @@ def latest_snapshot(db: Session) -> Optional[Snapshot]:
     return db.scalar(
         select(Snapshot)
         .options(*_snapshot_eager_options())
-        .order_by(Snapshot.snapshot_date.desc())
+        .order_by(Snapshot.snapshot_date.desc(), Snapshot.id.desc())
         .limit(1)
     )
 
 
-def previous_snapshot(db: Session, before_date: date) -> Optional[Snapshot]:
+def previous_snapshot(db: Session, current: Snapshot) -> Optional[Snapshot]:
+    """Return the snapshot immediately before ``current`` in deterministic order."""
     return db.scalar(
         select(Snapshot)
         .options(*_snapshot_eager_options())
-        .where(Snapshot.snapshot_date < before_date)
-        .order_by(Snapshot.snapshot_date.desc())
+        .where(
+            or_(
+                Snapshot.snapshot_date < current.snapshot_date,
+                and_(
+                    Snapshot.snapshot_date == current.snapshot_date,
+                    Snapshot.id < current.id,
+                ),
+            )
+        )
+        .order_by(Snapshot.snapshot_date.desc(), Snapshot.id.desc())
         .limit(1)
     )
 
 
 def all_snapshots(db: Session, ascending: bool = False) -> list[Snapshot]:
-    order = Snapshot.snapshot_date.asc() if ascending else Snapshot.snapshot_date.desc()
+    order = (
+        (Snapshot.snapshot_date.asc(), Snapshot.id.asc())
+        if ascending
+        else (Snapshot.snapshot_date.desc(), Snapshot.id.desc())
+    )
     return list(db.scalars(
         select(Snapshot)
         .options(*_snapshot_eager_options())
-        .order_by(order)
+        .order_by(*order)
     ))
 
 
@@ -223,6 +235,37 @@ def all_categories(db: Session) -> list[Category]:
     return list(db.scalars(select(Category).order_by(Category.sort_order, Category.id)))
 
 
+def assert_account_hierarchy_integrity(db: Session) -> None:
+    """Refuse startup when stored accounts exceed the supported single group level."""
+    accounts = list(db.scalars(select(Account)))
+    by_id = {account.id: account for account in accounts}
+    violations: list[str] = []
+
+    for account in accounts:
+        if account.parent_id is None:
+            continue
+        parent = by_id.get(account.parent_id)
+        if parent is None:
+            violations.append(f"account {account.id} has a missing parent")
+        elif account.is_group:
+            violations.append(f"group {account.id} is nested")
+        elif not parent.is_group:
+            violations.append(f"account {account.id} has a non-group parent")
+        elif parent.parent_id is not None:
+            violations.append(f"account {account.id} is below a nested group")
+
+    if violations:
+        examples = ", ".join(violations[:5])
+        remainder = len(violations) - 5
+        if remainder > 0:
+            examples += f", and {remainder} more"
+        raise RuntimeError(
+            "Account hierarchy check failed; no data was changed. "
+            "Only top-level groups with leaf sub-accounts are supported: "
+            f"{examples}."
+        )
+
+
 def balance_map(snap: Optional[Snapshot]) -> dict[int, Decimal]:
     """account_id -> amount for the given snapshot (empty if None)."""
     if snap is None:
@@ -247,7 +290,7 @@ def account_history(db: Session, account: Account) -> list[tuple]:
             .join(Balance, Balance.snapshot_id == Snapshot.id)
             .where(Balance.account_id.in_(child_ids))
             .group_by(Snapshot.id, Snapshot.snapshot_date)
-            .order_by(Snapshot.snapshot_date.asc())
+            .order_by(Snapshot.snapshot_date.asc(), Snapshot.id.asc())
         ).all()
         return [(r[0], r[1]) for r in rows]
     else:
@@ -255,9 +298,31 @@ def account_history(db: Session, account: Account) -> list[tuple]:
             select(Snapshot.snapshot_date, Balance.amount)
             .join(Balance, Balance.snapshot_id == Snapshot.id)
             .where(Balance.account_id == account.id)
-            .order_by(Snapshot.snapshot_date.asc())
+            .order_by(Snapshot.snapshot_date.asc(), Snapshot.id.asc())
         ).all()
         return [(r[0], r[1]) for r in rows]
+
+
+def account_histories(
+    db: Session, accounts: list[Account]
+) -> dict[int, list[tuple]]:
+    """Return snapshot histories for multiple leaf accounts in one query."""
+    result: dict[int, list[tuple]] = {account.id: [] for account in accounts}
+    leaf_ids = [account.id for account in accounts if not account.is_group]
+    if leaf_ids:
+        rows = db.execute(
+            select(Snapshot.snapshot_date, Balance.account_id, Balance.amount)
+            .join(Balance, Balance.snapshot_id == Snapshot.id)
+            .where(Balance.account_id.in_(leaf_ids))
+            .order_by(Snapshot.snapshot_date.asc(), Snapshot.id.asc())
+        ).all()
+        for snapshot_date, account_id, amount in rows:
+            result[account_id].append((snapshot_date, amount))
+
+    for account in accounts:
+        if account.is_group:
+            result[account.id] = account_history(db, account)
+    return result
 
 
 def latest_balance_for(db: Session, account: Account) -> Optional[Decimal]:

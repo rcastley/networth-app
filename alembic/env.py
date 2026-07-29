@@ -10,7 +10,9 @@ from app import models  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Migrations run inside the web process during startup. Preserve Uvicorn's
+    # access/error loggers so later request failures still emit tracebacks.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Respect a URL the caller set via cfg.set_main_option (e.g. demo_seed.py);
 # otherwise fall back to DATABASE_URL, otherwise the docker-default path.

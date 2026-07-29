@@ -4,10 +4,15 @@
   "private": true,
   "description": "Tailwind CSS build for the Net Worth Tracker app",
   "scripts": {
+    "build": "npm run build:css && npm run build:vendor",
     "build:css": "tailwindcss -i app/static/src.css -o app/static/app.css --minify",
+    "build:vendor": "node -e \"const fs=require('fs'),path=require('path');const out='app/static/vendor';fs.mkdirSync(out,{recursive:true});fs.copyFileSync(path.join(path.dirname(require.resolve('chart.js')),'chart.umd.min.js'),path.join(out,'chart.umd.min.js'))\"",
     "watch:css": "tailwindcss -i app/static/src.css -o app/static/app.css --watch"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.13"
+  },
+  "dependencies": {
+    "chart.js": "^4.5.1"
   }
 }

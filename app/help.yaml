@@ -29,6 +29,7 @@ views:
             <li><strong>Net Worth + Aux</strong> — adds in things like Life Insurance / Death in Service that you don't own today, but are part of your wider estate.</li>
           </ul>
           <p>The small green/red value beneath each headline is the change since your <em>previous</em> snapshot. Green = good for you, red = bad. For categories marked as liabilities, the sign convention works out automatically — paying down debt shows green even though the stored amount becomes "less negative".</p>
+          <p><strong>Privacy mode:</strong> use <em>Hide values</em> beside <em>Add account</em> to blur balances and changes on every headline and account card. The button changes to <em>Show values</em> so you can reveal them again quickly. Your choice is remembered by this browser, but this is visual shoulder-surfing protection only — it does not encrypt the values or remove them from the page.</p>
 
       - id: home-insights
         title: Trend / Allocation / Breakdown tabs
@@ -56,9 +57,9 @@ views:
             <li><strong>Parent group</strong> — leave as "(top-level)" for a standalone account. Pick a group here to nest this account inside it (e.g. several sub-pots inside one bank's group).</li>
             <li><strong>Notes</strong> — optional one-liner shown on the snapshot card.</li>
             <li><strong>Institution domain</strong> — e.g. <code>chase.com</code>. Used to fetch the logo from clearbit.com. Leave blank on a child to inherit from its parent group.</li>
-            <li><strong>Group</strong> checkbox — tick this to make a folder that holds child accounts. Groups have no balance of their own; they sum their children.</li>
+            <li><strong>Group</strong> checkbox — tick this to make a top-level folder that holds child accounts. Groups have no balance of their own; they sum their children.</li>
           </ul>
-          <p>If you want to use groups: create the group first (with the Group box ticked), then create the children and pick the group as their parent.</p>
+          <p>If you want to use groups: create the group first (with the Group box ticked), then create the children and pick the group as their parent. The hierarchy is deliberately limited to one level: top-level group → leaf sub-account. Groups cannot be nested.</p>
 
       - id: home-inactive
         title: Inactive vs. deleted
@@ -150,12 +151,12 @@ views:
         title: Trend &amp; recent values
         body: |
           <p>The sparkline shows this account's balance over every snapshot you've recorded. For group accounts it sums the children per snapshot.</p>
-          <p>The Recent values table lists the last 10 snapshots with the Δ vs the prior reading — handy for spotting unusual moves.</p>
+          <p>The Recent values table provides a scrollable history (up to the latest 500 snapshots) with the Δ vs the prior reading — handy for spotting unusual moves.</p>
 
       - id: acc-det-children
         title: Sub-accounts
         body: |
-          <p>If this account is a group, the Sub-accounts panel lists every child with its current balance and a link to that child's own detail page. Use this to walk the hierarchy without going back to the main accounts list.</p>
+          <p>If this account is a group, the Sub-accounts panel lists every child with its current balance, an individual sparkline, and a link to that child's own detail page. The sparkline uses the historical per-account balances already stored in your snapshots, so existing history appears immediately. A newly-added child, or one with fewer than two recorded balances, shows <em>No trend yet</em>.</p>
 
   # ---------------- Categories ----------------
   categories:
