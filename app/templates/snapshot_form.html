@@ -43,7 +43,23 @@
     </div>
     <p class="mt-2 text-xs text-slate-500">
       Click a card to enter or change a balance. Cards you don't touch retain their previous values when you save.
+      Totals are shown in {{ reporting_currency }}.
+      {% if rate_summary %}
+        Saved {{ rate_summary.source|upper }} rates effective {{ rate_summary.effective_date }} are retained unless you refresh them.
+      {% endif %}
     </p>
+    {% if snapshot %}
+      <label class="mt-2 inline-flex items-center gap-2 text-xs text-slate-600">
+        <input type="checkbox" name="refresh_rates" class="rounded">
+        Refresh foreign exchange rates to the latest daily rates
+      </label>
+    {% endif %}
+    {% if conversion_warnings %}
+      <div role="alert" class="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        The previous value could not be converted to the newly selected account currency for:
+        {{ conversion_warnings|join(', ') }}. Enter a fresh balance before saving.
+      </div>
+    {% endif %}
   </div>
 
   <!-- Card grid, grouped by category -->
@@ -90,7 +106,7 @@
               </div>
 
               <div>
-                <div class="text-2xl font-bold num">{% if card.current_total is not none %}{{ card.current_total|gbp }}{% else %}<span class="opacity-60">—</span>{% endif %}</div>
+                <div class="text-2xl font-bold num">{% if card.current_total is not none %}{{ card.current_total|money(reporting_currency) }}{% else %}<span class="opacity-60">—</span>{% endif %}</div>
                 <div class="text-xs opacity-70 mt-0.5">
                   {% if latest_date %}As of {{ latest_date|dt }}{% else %}No prior snapshot{% endif %}
                 </div>
@@ -106,43 +122,80 @@
               {% if children %}
                 {% for child in children %}
                   {% set child_lg = account_logo(child) %}
-                  <div class="flex items-center justify-between gap-3">
-                    <div class="flex items-center gap-2 min-w-0 flex-1">
-                      {% if child_lg.primary %}
-                        <img src="{{ child_lg.primary }}" alt="" loading="lazy"
-                             class="account-logo w-5 h-5 rounded object-scale-down bg-white border border-slate-200 shrink-0"
-                             {% if child_lg.fallback %}data-fallback="{{ child_lg.fallback }}"{% endif %}
-                             onerror="logoFallback(this)">
-                      {% else %}
-                        <div class="w-5 h-5 rounded border border-dashed border-slate-200 shrink-0"></div>
-                      {% endif %}
-                      <div class="min-w-0">
-                        <label for="balance-{{ child.id }}" class="text-sm font-medium text-slate-800 truncate">{{ child.name }}</label>
-                        <div id="balance-{{ child.id }}-hint" class="text-xs text-slate-400">
-                          {% if child.id in prefill %}Last: {{ prefill[child.id]|gbp }}{% else %}No prior value{% endif %}
-                        </div>
+                  {% set selected_currency = balance_currencies.get(child.id, child.currency_code) %}
+                  <div class="balance-row grid grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-x-2 gap-y-2 py-1" data-account="{{ child.id }}">
+                    {% if child_lg.primary %}
+                      <img src="{{ child_lg.primary }}" alt="" loading="lazy"
+                           class="account-logo mt-0.5 w-5 h-5 rounded object-scale-down bg-white border border-slate-200"
+                           {% if child_lg.fallback %}data-fallback="{{ child_lg.fallback }}"{% endif %}
+                           onerror="logoFallback(this)">
+                    {% else %}
+                      <div class="mt-0.5 w-5 h-5 rounded border border-dashed border-slate-200"></div>
+                    {% endif %}
+                    <div class="min-w-0">
+                      <label for="balance-{{ child.id }}"
+                             class="block break-words text-sm font-medium leading-snug text-slate-800">{{ child.name }}</label>
+                      <div id="balance-{{ child.id }}-hint" class="mt-0.5 text-xs text-slate-400">
+                        {% if child.id in prefill %}Last: {{ prefill[child.id]|money(selected_currency) }}{% else %}No prior value{% endif %}
                       </div>
                     </div>
-                    <input id="balance-{{ child.id }}" type="text" inputmode="decimal" name="acc_{{ child.id }}"
-                           aria-describedby="balance-{{ child.id }}-hint"
-                           value="{{ prefill[child.id] if child.id in prefill else '' }}"
-                           placeholder="0.00"
-                           class="num w-32 text-right border border-slate-300 rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
+                    <div class="col-start-2 min-w-0 space-y-1">
+                      <div class="grid grid-cols-[minmax(0,1fr)_5.25rem] gap-1">
+                        <input id="balance-{{ child.id }}" type="text" inputmode="decimal" name="acc_{{ child.id }}"
+                               aria-describedby="balance-{{ child.id }}-hint"
+                               value="{{ prefill[child.id] if child.id in prefill else '' }}"
+                               placeholder="0.00"
+                               class="num min-w-0 w-full text-right border border-slate-300 rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
+                        <select name="currency_{{ child.id }}" aria-label="Currency for {{ child.name }}"
+                                class="currency-select w-full border border-slate-300 rounded px-1 py-1.5 text-xs">
+                          {% for code, name in currency_options %}
+                            <option value="{{ code }}" {% if code == selected_currency %}selected{% endif %}>{{ code }}</option>
+                          {% endfor %}
+                        </select>
+                      </div>
+                      <p class="fx-rate-status text-[10px] leading-snug text-slate-500" aria-live="polite"></p>
+                      <label class="manual-rate-label block text-[10px] text-slate-500">
+                        1 {{ selected_currency }} =
+                        <input name="manual_rate_{{ child.id }}" inputmode="decimal" placeholder="rate"
+                               aria-label="Manual {{ selected_currency }} to {{ reporting_currency }} fallback rate"
+                               class="manual-rate-input num w-16 border border-slate-300 rounded px-1 py-0.5 text-right">
+                        {{ reporting_currency }} fallback
+                      </label>
+                    </div>
                   </div>
                 {% endfor %}
               {% else %}
-                <div class="flex items-center justify-between gap-3">
-                  <div class="min-w-0 flex-1">
-                    <label for="balance-{{ acc.id }}" class="sr-only">{{ acc.name }} balance</label>
+                {% set selected_currency = balance_currencies.get(acc.id, acc.currency_code) %}
+                <div class="balance-row space-y-2 py-1" data-account="{{ acc.id }}">
+                  <div>
+                    <label for="balance-{{ acc.id }}" class="block break-words text-sm font-medium leading-snug text-slate-800">{{ acc.name }}</label>
                     <div id="balance-{{ acc.id }}-hint" class="text-xs text-slate-400">
-                      {% if acc.id in prefill %}Last: {{ prefill[acc.id]|gbp }}{% else %}No prior value{% endif %}
+                      {% if acc.id in prefill %}Last: {{ prefill[acc.id]|money(selected_currency) }}{% else %}No prior value{% endif %}
                     </div>
                   </div>
-                  <input id="balance-{{ acc.id }}" type="text" inputmode="decimal" name="acc_{{ acc.id }}"
-                         aria-describedby="balance-{{ acc.id }}-hint"
-                         value="{{ prefill[acc.id] if acc.id in prefill else '' }}"
-                         placeholder="0.00"
-                         class="num w-32 text-right border border-slate-300 rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
+                  <div class="min-w-0 space-y-1">
+                    <div class="grid grid-cols-[minmax(0,1fr)_5.25rem] gap-1">
+                      <input id="balance-{{ acc.id }}" type="text" inputmode="decimal" name="acc_{{ acc.id }}"
+                             aria-describedby="balance-{{ acc.id }}-hint"
+                             value="{{ prefill[acc.id] if acc.id in prefill else '' }}"
+                             placeholder="0.00"
+                             class="num min-w-0 w-full text-right border border-slate-300 rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
+                      <select name="currency_{{ acc.id }}" aria-label="Currency for {{ acc.name }}"
+                              class="currency-select w-full border border-slate-300 rounded px-1 py-1.5 text-xs">
+                        {% for code, name in currency_options %}
+                          <option value="{{ code }}" {% if code == selected_currency %}selected{% endif %}>{{ code }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <p class="fx-rate-status text-[10px] leading-snug text-slate-500" aria-live="polite"></p>
+                    <label class="manual-rate-label block text-[10px] text-slate-500">
+                      1 {{ selected_currency }} =
+                      <input name="manual_rate_{{ acc.id }}" inputmode="decimal" placeholder="rate"
+                             aria-label="Manual {{ selected_currency }} to {{ reporting_currency }} fallback rate"
+                             class="manual-rate-input num w-16 border border-slate-300 rounded px-1 py-0.5 text-right">
+                      {{ reporting_currency }} fallback
+                    </label>
+                  </div>
                 </div>
               {% endif %}
             </div>
@@ -155,7 +208,7 @@
   <!-- Footer save bar -->
   <div class="flex items-center justify-between border-t border-slate-200 pt-4">
     <div class="text-xs text-slate-500">
-      Empty inputs are skipped on save. Use a leading minus for liabilities and overdrafts.
+      Empty inputs are skipped. Foreign balances use the latest daily ECB-backed rate; the manual rate is only used if that service is unavailable.
     </div>
     <div class="flex gap-2">
       <a href="/snapshots" class="inline-flex items-center gap-1 px-4 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50">
@@ -199,6 +252,44 @@
       face.querySelector('.chev-text').textContent = 'Tap to edit';
       face.focus();
     });
+  });
+
+  const reportingCurrency = {{ reporting_currency | tojson }};
+  const savedDisplayRates = {{ display_rates | tojson }};
+  document.querySelectorAll('.balance-row').forEach(row => {
+    const select = row.querySelector('.currency-select');
+    const label = row.querySelector('.manual-rate-label');
+    const input = row.querySelector('.manual-rate-input');
+    const status = row.querySelector('.fx-rate-status');
+    if (!select || !label || !input || !status) return;
+    function syncManualRate() {
+      const foreign = select.value !== reportingCurrency;
+      label.classList.toggle('hidden', !foreign);
+      input.disabled = !foreign;
+      status.classList.toggle('hidden', !foreign);
+      label.childNodes[0].textContent = `1 ${select.value} = `;
+      input.setAttribute(
+        'aria-label',
+        `Manual ${select.value} to ${reportingCurrency} fallback rate`
+      );
+      if (!foreign) {
+        status.textContent = '';
+      } else if (savedDisplayRates[select.value]) {
+        const saved = savedDisplayRates[select.value];
+        const rate = Number(saved.rate).toLocaleString(
+          undefined,
+          { maximumFractionDigits: 8 }
+        );
+        status.textContent =
+          `Saved rate: 1 ${select.value} = ${rate} ${reportingCurrency} · ` +
+          `effective ${saved.effective_date} · ${saved.source}`;
+      } else {
+        status.textContent =
+          `Latest daily ${select.value}/${reportingCurrency} rate will be fetched when saved.`;
+      }
+    }
+    select.addEventListener('change', syncManualRate);
+    syncManualRate();
   });
 
   // When editing a snapshot, pre-expand cards that already have any value

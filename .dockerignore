@@ -9,6 +9,8 @@ data/*.db
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm
+data/*.bkp
+data/*.backup
 node_modules
 app/static/app.css
 app/static/vendor

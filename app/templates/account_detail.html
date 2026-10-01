@@ -32,6 +32,9 @@
       {% elif account.notes %}
         <div class="text-xs opacity-70 mt-1">{{ account.notes }}</div>
       {% endif %}
+      {% if not account.is_group %}
+        <span class="text-[10px] uppercase tracking-wider bg-white/20 px-1.5 py-0.5 rounded mt-2 inline-block">{{ account.currency_code }} account · totals in {{ reporting_currency }}</span>
+      {% endif %}
       {% if not account.is_active %}
         <span class="text-[10px] uppercase tracking-wider bg-white/20 px-1.5 py-0.5 rounded mt-2 inline-block">Inactive</span>
       {% endif %}
@@ -40,7 +43,7 @@
     <div>
       {% if history %}
         {% set latest = history[-1] %}
-        <div class="text-3xl font-bold num">{{ latest[1]|gbp }}</div>
+        <div class="text-3xl font-bold num">{{ latest[1]|money(reporting_currency) }}</div>
         <div class="text-xs opacity-70 mt-0.5">As of {{ latest[0]|dt }}</div>
       {% else %}
         <div class="text-3xl font-bold num opacity-60">—</div>
@@ -106,10 +109,10 @@
                 {% for r in recent %}
                 <tr>
                   <td class="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">{{ r.date|dt }}</td>
-                  <td class="px-4 py-2 text-right num {% if r.amount < 0 %}text-red-600{% endif %}">{{ r.amount|gbp }}</td>
+                  <td class="px-4 py-2 text-right num {% if r.amount < 0 %}text-red-600{% endif %}">{{ r.amount|money(reporting_currency) }}</td>
                   <td class="px-4 py-2 text-right text-xs">
                     {% if r.previous is not none %}
-                      {{ m.delta_pill(r.amount, r.previous, show_pct=False) }}
+                      {{ m.delta_pill(r.amount, r.previous, show_pct=False, currency=reporting_currency) }}
                     {% else %}
                       <span class="text-slate-400">first</span>
                     {% endif %}
@@ -159,7 +162,7 @@
                       {% endif %}
                     </div>
                     <div class="text-sm num text-right text-slate-700 whitespace-nowrap {% if latest is not none and latest < 0 %}text-red-600{% endif %}">
-                      {% if latest is not none %}{{ latest|gbp }}{% else %}<span class="text-slate-400">—</span>{% endif %}
+                      {% if latest is not none %}{{ latest|money(reporting_currency) }}{% else %}<span class="text-slate-400">—</span>{% endif %}
                     </div>
                   </a>
                 </li>
@@ -215,6 +218,18 @@
           {% endfor %}
         </select>
         <p class="text-xs text-slate-400 mt-1">Only leaf accounts can have a parent; groups always remain top-level.</p>
+      </div>
+
+      <div>
+        <label for="acc-edit-currency" class="block text-xs font-medium text-slate-600 mb-1">Default currency</label>
+        <select id="acc-edit-currency" name="currency_code"
+                {% if account.is_group %}disabled{% endif %}
+                class="w-full border border-slate-300 rounded px-3 py-2 text-sm disabled:bg-slate-100">
+          {% for code, name in currency_options %}
+            <option value="{{ code }}" {% if code == account.currency_code %}selected{% endif %}>{{ code }} — {{ name }}</option>
+          {% endfor %}
+        </select>
+        <p class="text-xs text-slate-400 mt-1">Used as the starting currency on new snapshots. Existing balances keep their recorded currency.</p>
       </div>
 
       <div>
@@ -302,10 +317,12 @@
 
   const groupCheckbox = document.getElementById('acc-edit-is-group');
   const parentSelect = document.getElementById('acc-edit-parent');
+  const currencySelect = document.getElementById('acc-edit-currency');
   if (groupCheckbox && parentSelect) {
     function syncParentAvailability() {
       if (groupCheckbox.checked) parentSelect.value = '';
       parentSelect.disabled = groupCheckbox.checked;
+      if (currencySelect) currencySelect.disabled = groupCheckbox.checked;
     }
     groupCheckbox.addEventListener('change', syncParentAvailability);
     syncParentAvailability();
@@ -315,6 +332,10 @@
 {% if history|length >= 2 %}
 <script>
   (function () {
+    const reportingCurrency = {{ reporting_currency | tojson }};
+    const formatMoney = value => new Intl.NumberFormat(undefined, {
+      style: 'currency', currency: reportingCurrency, maximumFractionDigits: 2,
+    }).format(Number(value));
     const labels = {{ history | map(attribute=0) | map('string') | list | tojson }};
     const values = {{ history | map(attribute=1) | map('float')   | list | tojson }};
     const colour = "{{ cat.color }}";
@@ -335,7 +356,7 @@
         plugins: { legend: { display: false } },
         scales: {
           x: { ticks: { font: { size: 10 } } },
-          y: { ticks: { font: { size: 10 }, callback: v => '£' + Number(v).toLocaleString() } }
+          y: { ticks: { font: { size: 10 }, callback: v => formatMoney(v) } }
         }
       }
     });

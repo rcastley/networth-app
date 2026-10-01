@@ -1,8 +1,10 @@
 """FastAPI app for the Net Worth Tracker."""
+import asyncio
 import csv
 import hashlib
 import hmac
 import io
+import json
 import logging
 import os
 import secrets
@@ -24,9 +26,9 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from .db import Base, engine, get_db, SessionLocal, assert_foreign_key_integrity
-from .models import Category, Account, Snapshot, Balance
+from .models import Account, Balance, Category, Snapshot, SnapshotFxRate
 from .seed import seed_if_empty
-from . import services
+from . import fx, services
 
 
 logger = logging.getLogger("networth")
@@ -44,6 +46,7 @@ TOAST_MESSAGES = {
     "category-created": "Category created",
     "category-saved":   "Category saved",
     "category-deleted": "Category deleted",
+    "settings-saved": "Reporting currency updated",
 }
 
 
@@ -180,18 +183,12 @@ def _dt_local(value) -> str:
     return str(value)
 
 
-def _gbp(value) -> str:
-    """Format a Decimal/float/None as a GBP string."""
-    if value is None:
-        return "–"
+def _money(value, currency_code: str = "GBP") -> str:
+    """Format money using an explicit ISO currency code."""
     try:
-        v = Decimal(value)
-    except (InvalidOperation, TypeError):
+        return fx.format_currency(value, currency_code)
+    except ValueError:
         return "–"
-    sign = "-" if v < 0 else ""
-    abs_v = abs(v)
-    formatted = f"£{abs_v:,.2f}"
-    return f"({formatted})" if sign else formatted
 
 
 def _pct(value, total) -> str:
@@ -225,12 +222,14 @@ def _account_logo(acc) -> dict:
     return {"primary": None, "fallback": None}
 
 
-templates.env.filters["gbp"] = _gbp
+templates.env.filters["money"] = _money
+templates.env.filters["gbp"] = _money  # Backward-compatible for third-party templates.
 templates.env.filters["pct"] = _pct
 templates.env.filters["dt"]  = _dt_display
 templates.env.filters["dtlocal"] = _dt_local
 templates.env.globals["delta"] = services.delta
 templates.env.globals["account_logo"] = _account_logo
+templates.env.globals["currency_options"] = fx.currency_options()
 
 # Help content (loaded once at startup; restart to pick up edits).
 # YAML structure:
@@ -250,14 +249,15 @@ templates.env.globals["toast_messages"] = TOAST_MESSAGES
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, db: Session = Depends(get_db)):
+    reporting = services.reporting_currency(db)
     latest = services.latest_snapshot(db)
     previous = services.previous_snapshot(db, latest) if latest else None
-    totals = services.snapshot_totals(latest) if latest else None
-    prev_totals = services.snapshot_totals(previous) if previous else None
+    totals = services.snapshot_totals(latest, reporting) if latest else None
+    prev_totals = services.snapshot_totals(previous, reporting) if previous else None
     snaps_count = db.scalar(select(func.count(Snapshot.id))) or 0
 
-    latest_balances = services.balance_map(latest) if latest else {}
-    previous_balances = services.balance_map(previous) if previous else None
+    latest_balances = services.balance_map(latest, reporting) if latest else {}
+    previous_balances = services.balance_map(previous, reporting) if previous else None
     grid = _build_card_grid(db, prefill=latest_balances, previous=previous_balances)
     account_count = sum(len(cb["cards"]) for cb in grid["categories"])
 
@@ -275,6 +275,7 @@ def home(request: Request, db: Session = Depends(get_db)):
             "account_count": account_count,
             "latest_date":   latest.snapshot_date if latest else None,
             "now":           date.today(),
+            "reporting_currency": reporting,
         },
     )
 
@@ -288,10 +289,17 @@ def chart_data(period: str = "weekly", db: Session = Depends(get_db)):
 
 @app.get("/snapshots", response_class=HTMLResponse)
 def snapshots_list(request: Request, db: Session = Depends(get_db)):
+    reporting = services.reporting_currency(db)
     snaps = services.all_snapshots(db)
     return templates.TemplateResponse(
         "snapshots_list.html",
-        {"request": request, "view_id": "snapshots", "snapshots": snaps, "totals_for": services.snapshot_totals},
+        {
+            "request": request,
+            "view_id": "snapshots",
+            "snapshots": snaps,
+            "totals_for": lambda snap: services.snapshot_totals(snap, reporting),
+            "reporting_currency": reporting,
+        },
     )
 
 
@@ -362,6 +370,116 @@ def _build_card_grid(
     return {"categories": categories}
 
 
+def _snapshot_balance_inputs(form, accounts: list[Account]) -> list[tuple[Account, Decimal, str]]:
+    entries: list[tuple[Account, Decimal, str]] = []
+    for account in accounts:
+        amount = _parse_decimal(form.get(f"acc_{account.id}"))
+        if amount is None:
+            continue
+        try:
+            currency = fx.normalize_currency(
+                form.get(f"currency_{account.id}") or account.currency_code
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        entries.append((account, amount, currency))
+    return entries
+
+
+def _manual_rate_set_from_form(form, entries, reporting: str) -> fx.RateSet:
+    direct_rates: dict[str, Decimal] = {}
+    for account, _amount, currency in entries:
+        if currency == reporting:
+            continue
+        raw = form.get(f"manual_rate_{account.id}")
+        rate = _parse_decimal(raw)
+        if rate is None:
+            raise HTTPException(
+                503,
+                f"Current rates are unavailable. Go back and enter the manual "
+                f"{currency} to {reporting} rate for {account.name}.",
+            )
+        if currency in direct_rates and direct_rates[currency] != rate:
+            raise HTTPException(
+                400,
+                f"Use the same manual {currency}/{reporting} rate for every account.",
+            )
+        direct_rates[currency] = rate
+    try:
+        return fx.manual_rate_set(reporting, direct_rates)
+    except (fx.FxError, InvalidOperation) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+async def _resolve_snapshot_rates(
+    form,
+    entries,
+    reporting: str,
+    existing: Optional[Snapshot] = None,
+) -> Optional[fx.RateSet]:
+    foreign = {currency for _account, _amount, currency in entries if currency != reporting}
+    if not foreign:
+        return None
+    saved = services.snapshot_rate_map(existing) if existing else {}
+    refresh = form.get("refresh_rates") == "on"
+    preserve_saved = bool(saved) and not refresh
+    needed = foreign
+    if preserve_saved:
+        if reporting not in saved:
+            raise HTTPException(
+                400,
+                "The saved reporting-currency rate is missing. "
+                "Select refresh to replace the saved rates.",
+            )
+        needed = foreign - saved.keys()
+        if not needed:
+            return None
+    try:
+        rate_set = await asyncio.to_thread(fx.fetch_rate_set)
+        if not fx.rate_set_supports(rate_set, needed | {reporting}):
+            raise fx.FxError("The daily-rate service omitted a selected currency.")
+    except fx.FxError:
+        rate_set = _manual_rate_set_from_form(
+            form, [entry for entry in entries if entry[2] in needed], reporting
+        )
+    if preserve_saved:
+        # Anchor new currencies to the saved reporting rate, preserving both the
+        # existing cross-rates and their individual date/source metadata.
+        try:
+            for code in sorted(needed):
+                services.merge_reporting_rate(existing, reporting, code, rate_set)
+        except fx.FxError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return None
+    return rate_set
+
+
+def _snapshot_display_rates(
+    snap: Optional[Snapshot],
+    reporting: str,
+) -> dict[str, dict[str, str]]:
+    """Build exact native-to-reporting rates for snapshot-form display."""
+    if snap is None or not snap.fx_rates:
+        return {}
+    rates = services.snapshot_rate_map(snap)
+    rows = {row.currency_code: row for row in snap.fx_rates}
+    display_rates: dict[str, dict[str, str]] = {}
+    for code in fx.SUPPORTED_CURRENCIES:
+        if code == reporting or code not in rates or reporting not in rates:
+            continue
+        relevant_rows = (rows[code], rows[reporting])
+        display_rates[code] = {
+            "rate": str(fx.direct_rate(code, reporting, rates)),
+            "effective_date": max(
+                row.effective_date for row in relevant_rows
+            ).isoformat(),
+            "source": ", ".join(sorted({
+                row.source.upper() for row in relevant_rows
+            })),
+        }
+    return display_rates
+
+
 @app.get("/snapshots/new", response_class=HTMLResponse)
 def snapshot_new_form(request: Request, db: Session = Depends(get_db)):
     if not services.active_leaf_accounts(db):
@@ -374,9 +492,30 @@ def snapshot_new_form(request: Request, db: Session = Depends(get_db)):
                 "form_title": "New snapshot",
             },
         )
+    reporting = services.reporting_currency(db)
     latest = services.latest_snapshot(db)
-    prefill = services.balance_map(latest)
-    grid = _build_card_grid(db, prefill)
+    prefill: dict[int, Decimal] = {}
+    currencies: dict[int, str] = {}
+    conversion_warnings: list[str] = []
+    if latest:
+        latest_rates = services.snapshot_rate_map(latest)
+        for balance in latest.balances:
+            target = balance.account.currency_code
+            try:
+                prefill[balance.account_id] = fx.convert(
+                    balance.amount,
+                    balance.currency_code,
+                    target,
+                    latest_rates,
+                )
+                currencies[balance.account_id] = target
+            except fx.FxError:
+                # Do not mislabel the previous native amount as the new default.
+                # The user must enter a fresh value in the selected currency.
+                currencies[balance.account_id] = target
+                conversion_warnings.append(balance.account.name)
+    converted = services.balance_map(latest, reporting)
+    grid = _build_card_grid(db, converted)
     return templates.TemplateResponse(
         "snapshot_form.html",
         {
@@ -384,12 +523,17 @@ def snapshot_new_form(request: Request, db: Session = Depends(get_db)):
             "view_id": "snapshot_form",
             "grid": grid,
             "prefill": prefill,
+            "balance_currencies": currencies,
             "snapshot": None,
             "latest_date": latest.snapshot_date if latest else None,
             "default_date": _dt_local(datetime.now()),
             "form_title": "New snapshot",
             "submit_label": "Create snapshot",
             "form_action": "/snapshots",
+            "reporting_currency": reporting,
+            "rate_summary": None,
+            "display_rates": {},
+            "conversion_warnings": conversion_warnings,
         },
     )
 
@@ -406,16 +550,25 @@ async def snapshot_create(
     snap_dt = _parse_dt(form.get("snapshot_date"))
     notes = (form.get("notes") or "").strip()
 
+    accounts = services.active_leaf_accounts(db)
+    entries = _snapshot_balance_inputs(form, accounts)
+    reporting = services.reporting_currency(db)
+    rate_set = await _resolve_snapshot_rates(form, entries, reporting)
+
     snap = Snapshot(snapshot_date=snap_dt, notes=notes)
     db.add(snap)
     db.flush()
-
-    for acc in services.active_leaf_accounts(db):
-        raw = form.get(f"acc_{acc.id}")
-        amt = _parse_decimal(raw)
-        if amt is None:
-            continue
-        db.add(Balance(snapshot_id=snap.id, account_id=acc.id, amount=amt))
+    if rate_set:
+        services.store_rate_set(snap, rate_set)
+    for acc, amt, currency in entries:
+        db.add(
+            Balance(
+                snapshot_id=snap.id,
+                account_id=acc.id,
+                amount=amt,
+                currency_code=currency,
+            )
+        )
     db.commit()
     return _redirect_with_toast("/", "snapshot-created")
 
@@ -425,8 +578,12 @@ def snapshot_edit_form(snap_id: int, request: Request, db: Session = Depends(get
     snap = db.get(Snapshot, snap_id)
     if not snap:
         raise HTTPException(404)
+    reporting = services.reporting_currency(db)
     prefill = services.balance_map(snap)
-    grid = _build_card_grid(db, prefill)
+    currencies = services.balance_currency_map(snap)
+    converted = services.balance_map(snap, reporting)
+    grid = _build_card_grid(db, converted)
+    display_rates = _snapshot_display_rates(snap, reporting)
     return templates.TemplateResponse(
         "snapshot_form.html",
         {
@@ -434,12 +591,16 @@ def snapshot_edit_form(snap_id: int, request: Request, db: Session = Depends(get
             "view_id": "snapshot_form",
             "grid": grid,
             "prefill": prefill,
+            "balance_currencies": currencies,
             "snapshot": snap,
             "latest_date": snap.snapshot_date,
             "default_date": _dt_local(snap.snapshot_date),
             "form_title": f"Edit snapshot {_dt_display(snap.snapshot_date)}",
             "submit_label": "Save changes",
             "form_action": f"/snapshots/{snap.id}",
+            "reporting_currency": reporting,
+            "rate_summary": services.snapshot_rate_summary(snap),
+            "display_rates": display_rates,
         },
     )
 
@@ -458,18 +619,33 @@ async def snapshot_update(
     snap.snapshot_date = _parse_dt(form.get("snapshot_date"))
     snap.notes = (form.get("notes") or "").strip()
 
+    accounts = services.active_leaf_accounts(db)
+    entries = _snapshot_balance_inputs(form, accounts)
+    reporting = services.reporting_currency(db)
+    rate_set = await _resolve_snapshot_rates(form, entries, reporting, snap)
+    if rate_set:
+        services.store_rate_set(snap, rate_set)
+
     # Replace balances
     existing = {b.account_id: b for b in snap.balances}
-    for acc in services.active_leaf_accounts(db):
-        raw = form.get(f"acc_{acc.id}")
-        amt = _parse_decimal(raw)
+    submitted = {account.id: (amount, currency) for account, amount, currency in entries}
+    for acc in accounts:
+        amount_currency = submitted.get(acc.id)
         if acc.id in existing:
-            if amt is None:
+            if amount_currency is None:
                 db.delete(existing[acc.id])
             else:
-                existing[acc.id].amount = amt
-        elif amt is not None:
-            db.add(Balance(snapshot_id=snap.id, account_id=acc.id, amount=amt))
+                existing[acc.id].amount = amount_currency[0]
+                existing[acc.id].currency_code = amount_currency[1]
+        elif amount_currency is not None:
+            db.add(
+                Balance(
+                    snapshot_id=snap.id,
+                    account_id=acc.id,
+                    amount=amount_currency[0],
+                    currency_code=amount_currency[1],
+                )
+            )
     db.commit()
     return _redirect_with_toast("/snapshots", "snapshot-updated")
 
@@ -502,6 +678,7 @@ def account_new_form(request: Request, db: Session = Depends(get_db)):
             "view_id": "account_detail",
             "categories": categories,
             "groups": groups,
+            "reporting_currency": services.reporting_currency(db),
         },
     )
 
@@ -521,7 +698,8 @@ def account_detail(acc_id: int, request: Request, db: Session = Depends(get_db))
     # Per-account history for sparkline + recent values.
     # Recent values is a scrollable list in the UI; cap at 500 so a hyperactive
     # snapshotter doesn't ship a pathological payload to the client.
-    history = services.account_history(db, acc)
+    reporting = services.reporting_currency(db)
+    history = services.account_history(db, acc, reporting)
     recent = []
     for i in range(len(history) - 1, -1, -1):
         d, amt = history[i]
@@ -531,8 +709,8 @@ def account_detail(acc_id: int, request: Request, db: Session = Depends(get_db))
             break
 
     children = sorted(acc.children, key=lambda c: (c.sort_order, c.id)) if acc.is_group else []
-    children_latest = services.latest_balances_for_accounts(db, children)
-    children_history = services.account_histories(db, children)
+    children_latest = services.latest_balances_for_accounts(db, children, reporting)
+    children_history = services.account_histories(db, children, reporting)
 
     return templates.TemplateResponse(
         "account_detail.html",
@@ -547,6 +725,7 @@ def account_detail(acc_id: int, request: Request, db: Session = Depends(get_db))
             "children":        children,
             "children_latest": children_latest,
             "children_history": children_history,
+            "reporting_currency": reporting,
         },
     )
 
@@ -567,6 +746,12 @@ async def account_create(
     parent_id = int(parent_raw) if parent_raw else None
     institution_domain = (form.get("institution_domain") or "").strip() or None
     logo_url           = _validated_logo_url(form.get("logo_url"))
+    try:
+        currency_code = fx.normalize_currency(
+            form.get("currency_code") or services.reporting_currency(db)
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     if not name:
         raise HTTPException(400, "Name is required")
     _validate_account_hierarchy(
@@ -581,6 +766,7 @@ async def account_create(
         is_active=True,
         is_group=is_group, parent_id=parent_id,
         institution_domain=institution_domain, logo_url=logo_url,
+        currency_code=currency_code,
     )
     db.add(acc)
     db.commit()
@@ -619,6 +805,13 @@ async def account_update(
     acc.parent_id = new_parent
     acc.institution_domain = (form.get("institution_domain") or "").strip() or None
     acc.logo_url           = _validated_logo_url(form.get("logo_url"))
+    if not new_is_group:
+        try:
+            acc.currency_code = fx.normalize_currency(
+                form.get("currency_code") or acc.currency_code
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
     # is_modified() compares loaded state vs current — same-value assignments don't count.
     # Must be called before commit (which clears the session's attribute history).
     changed = db.is_modified(acc, include_collections=False)
@@ -721,6 +914,169 @@ def category_delete(
     return _redirect_with_toast("/categories", "category-deleted")
 
 
+# ---------- Settings ----------
+
+def _currency_change_preview(db: Session, target: str) -> list[dict]:
+    affected: list[dict] = []
+    current = services.reporting_currency(db)
+    for snap in services.all_snapshots(db, ascending=True):
+        rates = services.snapshot_rate_map(snap)
+        source_currencies = sorted({
+            balance.currency_code
+            for balance in snap.balances
+            if balance.currency_code != target
+        })
+        missing = [
+            code
+            for code in source_currencies
+            if code not in rates or current not in rates or target not in rates
+        ]
+        if missing:
+            affected.append({"snapshot": snap, "currencies": missing})
+    return affected
+
+
+def _settings_context(
+    request: Request,
+    db: Session,
+    *,
+    selected: Optional[str] = None,
+    preview: Optional[list[dict]] = None,
+    error: Optional[str] = None,
+) -> dict:
+    current = services.reporting_currency(db)
+    return {
+        "request": request,
+        "view_id": "settings",
+        "current_currency": current,
+        "selected_currency": selected or current,
+        "preview": preview,
+        "error": error,
+    }
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request, db: Session = Depends(get_db)):
+    return templates.TemplateResponse(
+        "settings.html",
+        _settings_context(request, db),
+    )
+
+
+@app.post("/settings", response_class=HTMLResponse)
+async def settings_update(
+    request: Request,
+    _csrf: None = Depends(_require_csrf),
+    db: Session = Depends(get_db),
+):
+    form = await request.form()
+    try:
+        target = fx.normalize_currency(form.get("reporting_currency"))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    current = services.reporting_currency(db)
+    if target == current:
+        return RedirectResponse("/settings", status_code=303)
+
+    preview = _currency_change_preview(db, target)
+    if form.get("confirmed") != "yes":
+        return templates.TemplateResponse(
+            "settings.html",
+            _settings_context(request, db, selected=target, preview=preview),
+        )
+
+    rate_dates = sorted({item["snapshot"].snapshot_date.date() for item in preview})
+    max_settings_rate_dates = 366
+    if len(rate_dates) > max_settings_rate_dates:
+        raise HTTPException(
+            400,
+            f"Changing currency requires more than {max_settings_rate_dates} "
+            "historical rate dates, which exceeds the safe per-request limit.",
+        )
+    semaphore = asyncio.Semaphore(4)
+
+    async def fetch_historical(rate_date: date):
+        async with semaphore:
+            try:
+                return rate_date, await asyncio.to_thread(
+                    fx.fetch_rate_set,
+                    rate_date,
+                )
+            except fx.FxError as exc:
+                return rate_date, exc
+
+    settings_rate_cache = dict(
+        await asyncio.gather(*(fetch_historical(rate_date) for rate_date in rate_dates))
+    )
+
+    for item in preview:
+        snap = item["snapshot"]
+        manual: Optional[dict[str, Decimal]] = None
+        rate_set: Optional[fx.RateSet] = None
+        try:
+            cached_rate = settings_rate_cache[snap.snapshot_date.date()]
+            if isinstance(cached_rate, fx.FxError):
+                raise cached_rate
+            rate_set = cached_rate
+            saved = services.snapshot_rate_map(snap)
+            required = (
+                {current, target}
+                if saved
+                else set(item["currencies"]) | {target}
+            )
+            if not fx.rate_set_supports(rate_set, required):
+                raise fx.FxError("A required historical currency is unavailable.")
+        except fx.FxError:
+            manual = {}
+            for code in item["currencies"]:
+                rate = _parse_decimal(form.get(f"manual_{snap.id}_{code}"))
+                if rate is None:
+                    return templates.TemplateResponse(
+                        "settings.html",
+                        _settings_context(
+                            request,
+                            db,
+                            selected=target,
+                            preview=preview,
+                            error=(
+                                "Some historical rates are unavailable. Enter each "
+                                "requested manual rate and confirm again."
+                            ),
+                        ),
+                        status_code=503,
+                    )
+                manual[code] = rate
+        saved = services.snapshot_rate_map(snap)
+        if manual is not None and saved:
+            try:
+                services.merge_manual_reporting_rate(
+                    snap,
+                    target,
+                    manual,
+                    snap.snapshot_date.date(),
+                )
+            except fx.FxError as exc:
+                raise HTTPException(400, str(exc)) from exc
+        elif manual is not None:
+            services.store_rate_set(
+                snap,
+                fx.manual_rate_set(
+                    target,
+                    manual,
+                    snap.snapshot_date.date(),
+                ),
+            )
+        elif saved and rate_set is not None:
+            services.merge_reporting_rate(snap, current, target, rate_set)
+        elif rate_set is not None:
+            services.store_rate_set(snap, rate_set)
+
+    settings = services.get_settings(db)
+    settings.reporting_currency = target
+    db.commit()
+    return _redirect_with_toast("/settings", "settings-saved")
+
+
 # ---------- Helpers ----------
 
 def _parse_dt(value) -> datetime:
@@ -809,35 +1165,108 @@ def _would_cycle(db: Session, acc_id: int, new_parent_id: int) -> bool:
 def _parse_decimal(value) -> Optional[Decimal]:
     if value is None:
         return None
-    s = str(value).strip().replace(",", "").replace("£", "")
+    s = str(value).strip().replace(",", "")
+    for symbol in ("£", "$", "€", "¥"):
+        s = s.replace(symbol, "")
     if s == "":
         return None
     try:
-        return Decimal(s)
-    except InvalidOperation:
-        return None
+        amount = Decimal(s)
+    except InvalidOperation as exc:
+        raise HTTPException(400, f"Invalid monetary value: {value!s}") from exc
+    if not amount.is_finite():
+        raise HTTPException(400, "Monetary values must be finite numbers.")
+    if abs(amount) > Decimal("999999999999.99"):
+        raise HTTPException(400, "Monetary value is outside the supported range.")
+    return amount
 
 
 # ---------- CSV import / export ----------
 
+def _parse_exported_fx_rates(value: object) -> list[dict]:
+    raw = str(value or "").strip()
+    if not raw:
+        return []
+    if len(raw) > 64 * 1024:
+        raise ValueError("FX Rates metadata is too large.")
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("FX Rates metadata is not valid JSON.") from exc
+    if not isinstance(payload, list) or len(payload) > len(fx.SUPPORTED_CURRENCIES):
+        raise ValueError("FX Rates metadata has an invalid structure.")
+    parsed: list[dict] = []
+    seen: set[str] = set()
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("FX Rates metadata has an invalid entry.")
+        code = fx.normalize_currency(item.get("currency"))
+        if code in seen:
+            raise ValueError(f"FX Rates metadata repeats {code}.")
+        seen.add(code)
+        try:
+            rate = fx.normalize_rate(item.get("rate_per_eur"))
+            effective_date = datetime.strptime(
+                str(item.get("effective_date")),
+                "%Y-%m-%d",
+            ).date()
+        except (fx.FxError, InvalidOperation, TypeError, ValueError) as exc:
+            raise ValueError(f"FX Rates metadata has an invalid {code} rate.") from exc
+        source = str(item.get("source") or "")
+        if source not in {"ecb", "manual"}:
+            raise ValueError(f"FX Rates metadata has an invalid {code} rate.")
+        parsed.append({
+            "currency_code": code,
+            "rate_per_eur": rate,
+            "effective_date": effective_date,
+            "source": source,
+        })
+    return parsed
+
 @app.get("/export")
 def export_csv(db: Session = Depends(get_db)):
-    """Wide-format CSV: Date, Notes, [per-leaf-account columns], Liquid, Net Worth, Net Worth + Aux."""
+    """Wide-format CSV with native account amounts and companion currency columns."""
     leaves = services.active_leaf_accounts(db)
     snaps = services.all_snapshots(db, ascending=True)
+    reporting = services.reporting_currency(db)
 
     sio = io.StringIO()
     w = csv.writer(sio)
-    w.writerow(["Date", "Notes"] + [a.name for a in leaves]
-               + ["Liquid", "Net Worth", "Net Worth + Aux"])
+    account_headers: list[str] = []
+    for account in leaves:
+        account_headers.extend([account.name, f"{account.name} Currency"])
+    w.writerow(
+        ["Date", "Notes", "FX Rates"]
+        + account_headers
+        + ["Liquid", "Net Worth", "Net Worth + Aux", "Reporting Currency"]
+    )
 
     for snap in snaps:
         bm = services.balance_map(snap)
-        t = services.snapshot_totals(snap)
-        row = [snap.snapshot_date.isoformat(), snap.notes]
+        currencies = services.balance_currency_map(snap)
+        t = services.snapshot_totals(snap, reporting)
+        frozen_rates = json.dumps(
+            [
+                {
+                    "currency": rate.currency_code,
+                    "rate_per_eur": str(rate.rate_per_eur),
+                    "effective_date": rate.effective_date.isoformat(),
+                    "source": rate.source,
+                }
+                for rate in sorted(snap.fx_rates, key=lambda item: item.currency_code)
+            ],
+            separators=(",", ":"),
+        )
+        row = [snap.snapshot_date.isoformat(), snap.notes, frozen_rates]
         for a in leaves:
             row.append(str(bm.get(a.id, "")) if a.id in bm else "")
-        row.extend([str(t["liquid"]), str(t["net_worth"]), str(t["net_worth_plus_aux"])])
+            row.append(currencies.get(a.id, a.currency_code) if a.id in bm else "")
+        row.extend([
+            str(t["liquid"]),
+            str(t["net_worth"]),
+            str(t["net_worth_plus_aux"]),
+            reporting,
+        ])
         w.writerow(row)
 
     fname = f"networth-export-{date.today().isoformat()}.csv"
@@ -869,30 +1298,52 @@ async def import_csv(
     """
     if not services.active_leaf_accounts(db):
         raise HTTPException(400, "Add at least one account before importing snapshots.")
-    raw = await file.read()
+    max_csv_bytes = 5 * 1024 * 1024
+    raw = await file.read(max_csv_bytes + 1)
+    if len(raw) > max_csv_bytes:
+        raise HTTPException(413, "CSV files are limited to 5 MB.")
     text = raw.decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
     headers = reader.fieldnames or []
     if "Date" not in headers:
         raise HTTPException(400, "CSV must include a 'Date' column.")
+    if len(headers) != len(set(headers)):
+        raise HTTPException(
+            400,
+            "CSV column names must be unique; an account name may conflict "
+            "with a currency column.",
+        )
 
     accounts_by_name = {a.name.lower().strip(): a for a in services.active_leaf_accounts(db)}
     matched: dict[str, Account] = {}
     unmatched: list[str] = []
     for h in headers:
-        if h in ("Date", "Notes"):
+        if h in ("Date", "Notes", "FX Rates"):
             continue
-        if h in ("Liquid", "Net Worth", "Net Worth + Aux"):
+        if h in ("Liquid", "Net Worth", "Net Worth + Aux", "Reporting Currency"):
             continue  # derived columns from the export — ignore on import
         key = h.lower().strip()
         if key in accounts_by_name:
             matched[h] = accounts_by_name[key]
-        else:
-            unmatched.append(h)
+            continue
+        if any(
+            h.endswith(suffix)
+            and h[:-len(suffix)] in headers
+            and h[:-len(suffix)].lower().strip() in accounts_by_name
+            for suffix in (" Currency", " FX Rate")
+        ):
+            continue
+        unmatched.append(h)
 
     created, skipped, overwritten = 0, 0, 0
     errors: list[str] = []
+    rate_cache: dict[date, fx.RateSet | fx.FxError] = {}
+    max_rows = 5000
+    max_rate_dates = 366
     for i, row in enumerate(reader, start=2):
+        if i > max_rows + 1:
+            errors.append(f"Import stopped after {max_rows} data rows.")
+            break
         date_str = (row.get("Date") or "").strip()
         if not date_str:
             continue
@@ -908,19 +1359,92 @@ async def import_csv(
             if mode == "skip":
                 skipped += 1
                 continue
-            else:
-                db.delete(existing)
-                db.flush()
-                overwritten += 1
 
+        parsed_entries: list[tuple[Account, Decimal, str]] = []
+        row_invalid = False
+        for col, acc in matched.items():
+            try:
+                amt = _parse_decimal(row.get(col))
+                currency = fx.normalize_currency(
+                    row.get(f"{col} Currency") or acc.currency_code
+                )
+            except (HTTPException, ValueError) as exc:
+                detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+                errors.append(f"Row {i}: {detail}")
+                row_invalid = True
+                break
+            if amt is not None:
+                parsed_entries.append((acc, amt, currency))
+        if row_invalid:
+            continue
+        try:
+            frozen_rate_rows = _parse_exported_fx_rates(row.get("FX Rates"))
+        except ValueError as exc:
+            errors.append(f"Row {i}: {exc}")
+            continue
+
+        reporting = services.reporting_currency(db)
+        foreign = {currency for _acc, _amt, currency in parsed_entries if currency != reporting}
+        rate_set = None
+        frozen_rate_map = {
+            item["currency_code"]: item["rate_per_eur"]
+            for item in frozen_rate_rows
+        }
+        if foreign and frozen_rate_rows:
+            if not foreign.issubset(frozen_rate_map) or reporting not in frozen_rate_map:
+                errors.append(
+                    f"Row {i}: frozen FX metadata omits a balance or reporting currency."
+                )
+                continue
+        elif foreign:
+            try:
+                rate_date = snap_dt.date()
+                if rate_date not in rate_cache:
+                    if len(rate_cache) >= max_rate_dates:
+                        errors.append(
+                            f"Row {i}: import exceeds the {max_rate_dates}-date "
+                            "foreign-rate lookup limit."
+                        )
+                        continue
+                    try:
+                        rate_cache[rate_date] = await asyncio.to_thread(
+                            fx.fetch_rate_set,
+                            rate_date,
+                        )
+                    except fx.FxError as exc:
+                        rate_cache[rate_date] = exc
+                cached_rate = rate_cache[rate_date]
+                if isinstance(cached_rate, fx.FxError):
+                    raise cached_rate
+                rate_set = cached_rate
+                if not fx.rate_set_supports(rate_set, foreign | {reporting}):
+                    raise fx.FxError("A selected currency has no historical rate.")
+            except fx.FxError as exc:
+                errors.append(f"Row {i}: {exc}")
+                continue
+        if existing:
+            db.delete(existing)
+            db.flush()
+            overwritten += 1
         snap = Snapshot(snapshot_date=snap_dt, notes=(row.get("Notes") or "").strip())
         db.add(snap)
         db.flush()
-        for col, acc in matched.items():
-            amt = _parse_decimal(row.get(col))
-            if amt is None:
-                continue
-            db.add(Balance(snapshot_id=snap.id, account_id=acc.id, amount=amt))
+        if frozen_rate_rows:
+            snap.fx_rates.extend(
+                SnapshotFxRate(**item)
+                for item in frozen_rate_rows
+            )
+        elif rate_set:
+            services.store_rate_set(snap, rate_set)
+        for acc, amt, currency in parsed_entries:
+            db.add(
+                Balance(
+                    snapshot_id=snap.id,
+                    account_id=acc.id,
+                    amount=amt,
+                    currency_code=currency,
+                )
+            )
         created += 1
     db.commit()
 

@@ -41,6 +41,17 @@
     </div>
 
     <div>
+      <label for="acc-new-currency" class="block text-xs font-medium text-slate-600 mb-1">Default currency</label>
+      <select id="acc-new-currency" name="currency_code"
+              class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+        {% for code, name in currency_options %}
+          <option value="{{ code }}" {% if code == reporting_currency %}selected{% endif %}>{{ code }} — {{ name }}</option>
+        {% endfor %}
+      </select>
+      <p class="text-xs text-slate-400 mt-1">Snapshot entries start in this currency and may be overridden.</p>
+    </div>
+
+    <div>
       <label for="acc-new-notes" class="block text-xs font-medium text-slate-600 mb-1">Notes</label>
       <input id="acc-new-notes" name="notes" class="w-full border border-slate-300 rounded px-3 py-2 text-sm"
              placeholder="Brief description (optional)">
@@ -85,10 +96,12 @@
   (function () {
     const group = document.getElementById('acc-new-is-group');
     const parent = document.getElementById('acc-new-parent');
+    const currency = document.getElementById('acc-new-currency');
     if (!group || !parent) return;
     function syncParentAvailability() {
       if (group.checked) parent.value = '';
       parent.disabled = group.checked;
+      if (currency) currency.disabled = group.checked;
     }
     group.addEventListener('change', syncParentAvailability);
     syncParentAvailability();

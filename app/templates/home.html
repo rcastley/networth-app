@@ -61,8 +61,8 @@
   <div class="relative bg-white border border-slate-200 rounded-lg p-5 overflow-hidden">
     <span class="absolute inset-x-0 top-0 h-1" style="background: linear-gradient(90deg, #1D4ED8, #6366F1);"></span>
     <div class="text-xs uppercase tracking-wide text-slate-500 font-medium">Net Worth</div>
-    <div class="text-3xl font-semibold text-brand-900 mt-1 num" data-private-value>{{ totals.net_worth|gbp }}</div>
-    <div class="mt-1" data-private-value>{{ m.delta_pill(totals.net_worth, prev_totals.net_worth if prev_totals else none) }}</div>
+    <div class="text-3xl font-semibold text-brand-900 mt-1 num" data-private-value>{{ totals.net_worth|money(reporting_currency) }}</div>
+    <div class="mt-1" data-private-value>{{ m.delta_pill(totals.net_worth, prev_totals.net_worth if prev_totals else none, currency=reporting_currency) }}</div>
     <div class="relative mt-3" style="height: 36px;">
       <canvas id="spark-nw" role="img" aria-label="Net worth trend"></canvas>
     </div>
@@ -70,8 +70,8 @@
   <div class="relative bg-white border border-slate-200 rounded-lg p-5 overflow-hidden">
     <span class="absolute inset-x-0 top-0 h-1" style="background: linear-gradient(90deg, #059669, #10B981);"></span>
     <div class="text-xs uppercase tracking-wide text-slate-500 font-medium">Liquid (Cash + Investments)</div>
-    <div class="text-3xl font-semibold text-emerald-700 mt-1 num" data-private-value>{{ totals.liquid|gbp }}</div>
-    <div class="mt-1" data-private-value>{{ m.delta_pill(totals.liquid, prev_totals.liquid if prev_totals else none) }}</div>
+    <div class="text-3xl font-semibold text-emerald-700 mt-1 num" data-private-value>{{ totals.liquid|money(reporting_currency) }}</div>
+    <div class="mt-1" data-private-value>{{ m.delta_pill(totals.liquid, prev_totals.liquid if prev_totals else none, currency=reporting_currency) }}</div>
     <div class="relative mt-3" style="height: 36px;">
       <canvas id="spark-liquid" role="img" aria-label="Liquid assets trend"></canvas>
     </div>
@@ -79,8 +79,8 @@
   <div class="relative bg-white border border-slate-200 rounded-lg p-5 overflow-hidden">
     <span class="absolute inset-x-0 top-0 h-1" style="background: linear-gradient(90deg, #64748B, #94A3B8);"></span>
     <div class="text-xs uppercase tracking-wide text-slate-500 font-medium">Net Worth + Aux</div>
-    <div class="text-3xl font-semibold text-slate-700 mt-1 num" data-private-value>{{ totals.net_worth_plus_aux|gbp }}</div>
-    <div class="mt-1" data-private-value>{{ m.delta_pill(totals.net_worth_plus_aux, prev_totals.net_worth_plus_aux if prev_totals else none) }}</div>
+    <div class="text-3xl font-semibold text-slate-700 mt-1 num" data-private-value>{{ totals.net_worth_plus_aux|money(reporting_currency) }}</div>
+    <div class="mt-1" data-private-value>{{ m.delta_pill(totals.net_worth_plus_aux, prev_totals.net_worth_plus_aux if prev_totals else none, currency=reporting_currency) }}</div>
     {# Auxiliary categories are typically constant, so no sparkline — placeholder for visual rhythm #}
     <div class="mt-3 h-[36px] flex items-center justify-center">
       <div aria-hidden="true" class="h-px w-full bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
@@ -208,7 +208,7 @@
         <div class="flex-1"></div>
 
         {# Slot 4: balance #}
-        <div class="text-2xl font-bold num leading-tight" data-private-value>{% if card.current_total is not none %}{{ card.current_total|gbp }}{% else %}<span class="opacity-60">—</span>{% endif %}</div>
+        <div class="text-2xl font-bold num leading-tight" data-private-value>{% if card.current_total is not none %}{{ card.current_total|money(reporting_currency) }}{% else %}<span class="opacity-60">—</span>{% endif %}</div>
 
         {# Slot 5: delta (always rendered; invisible placeholder keeps height identical) #}
         {% set d = delta(card.current_total, card.previous_total) if (card.previous_total is not none and card.current_total is not none) else none %}
@@ -216,7 +216,7 @@
           <div class="text-xs num text-white/90" data-private-value>
             <span class="inline-flex items-center gap-0.5">
               <span class="material-symbols-outlined text-sm">{{ 'arrow_circle_up' if d.direction == 'up' else 'arrow_circle_down' }}</span>
-              {{ d.abs|gbp }}{% if d.pct is not none %} ({{ '%+.2f' % d.pct }}%){% endif %}
+              {{ d.abs|money(reporting_currency) }}{% if d.pct is not none %} ({{ '%+.2f' % d.pct }}%){% endif %}
             </span>
           </div>
         {% else %}
@@ -245,6 +245,13 @@
 <script>
   let trendChart, allocChart, sparkNw, sparkLiquid;
   let expandedChartsInited = false;
+  const reportingCurrency = {{ reporting_currency | tojson }};
+  const moneyFormatter = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: reportingCurrency,
+    maximumFractionDigits: 2,
+  });
+  const formatMoney = value => moneyFormatter.format(Number(value));
 
   function renderSpark(canvasId, labels, values, color, accessibleName, prev) {
     const el = document.getElementById(canvasId);
@@ -253,7 +260,7 @@
       el.setAttribute(
         'aria-label',
         `${accessibleName}: ${labels.length} points from ${labels[0]} to ${labels[labels.length - 1]}; ` +
-        `latest value £${Number(values[values.length - 1]).toLocaleString()}`
+        `latest value ${formatMoney(values[values.length - 1])}`
       );
     }
     const ctx = el.getContext('2d');
@@ -300,8 +307,8 @@
         'aria-label',
         `Net worth and liquid balances using ${period} data: ${data.labels.length} points from ` +
         `${data.labels[0]} to ${data.labels[data.labels.length - 1]}. Latest net worth ` +
-        `£${Number(data.net_worth[data.net_worth.length - 1]).toLocaleString()} and latest liquid assets ` +
-        `£${Number(data.liquid[data.liquid.length - 1]).toLocaleString()}.`
+        `${formatMoney(data.net_worth[data.net_worth.length - 1])} and latest liquid assets ` +
+        `${formatMoney(data.liquid[data.liquid.length - 1])}.`
       );
     }
     const ctx = canvas.getContext('2d');
@@ -317,7 +324,7 @@
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        scales: { y: { ticks: { callback: v => '£' + v.toLocaleString() } } },
+        scales: { y: { ticks: { callback: v => formatMoney(v) } } },
         plugins: { legend: { position: 'bottom' } }
       }
     });
@@ -346,7 +353,7 @@
     canvas.setAttribute(
       'aria-label',
       'Latest net-worth allocation: ' +
-      fL.map((label, i) => `${label} £${Number(fV[i]).toLocaleString()}`).join(', ')
+      fL.map((label, i) => `${label} ${formatMoney(fV[i])}`).join(', ')
     );
     const ctx = canvas.getContext('2d');
     if (allocChart) allocChart.destroy();
@@ -357,7 +364,7 @@
         responsive: true, maintainAspectRatio: false,
         plugins: {
           legend: { position: 'bottom', labels: { boxWidth: 10 } },
-          tooltip: { callbacks: { label: c => `${c.label}: £${c.parsed.toLocaleString()}` } }
+          tooltip: { callbacks: { label: c => `${c.label}: ${formatMoney(c.parsed)}` } }
         }
       }
     });

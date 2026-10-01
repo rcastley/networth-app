@@ -3,8 +3,16 @@ from decimal import Decimal
 from collections import defaultdict
 from typing import Optional
 from sqlalchemy.orm import Session, joinedload, selectinload  # type: ignore
-from sqlalchemy import and_, func, or_, select  # type: ignore
-from .models import Snapshot, Balance, Account, Category
+from sqlalchemy import and_, or_, select  # type: ignore
+from . import fx
+from .models import (
+    Account,
+    AppSettings,
+    Balance,
+    Category,
+    Snapshot,
+    SnapshotFxRate,
+)
 
 
 def _snapshot_eager_options():
@@ -16,12 +24,167 @@ def _snapshot_eager_options():
             joinedload(Account.category),
             joinedload(Account.parent),
         ),
+        selectinload(Snapshot.fx_rates),
+    )
+
+
+# ---------- Settings and exchange rates ----------
+
+def get_settings(db: Session) -> AppSettings:
+    settings = db.get(AppSettings, 1)
+    if settings is None:
+        settings = AppSettings(id=1, reporting_currency="GBP")
+        db.add(settings)
+        db.flush()
+    return settings
+
+
+def reporting_currency(db: Session) -> str:
+    return fx.normalize_currency(get_settings(db).reporting_currency)
+
+
+def snapshot_rate_map(snap: Snapshot) -> dict[str, Decimal]:
+    return {
+        row.currency_code: Decimal(row.rate_per_eur)
+        for row in snap.fx_rates
+    }
+
+
+def store_rate_set(snap: Snapshot, rate_set: fx.RateSet) -> None:
+    # Reuse persisted rows: inserting replacements before orphan deletion would
+    # violate the snapshot/currency unique constraint during the flush.
+    existing = {row.currency_code: row for row in snap.fx_rates}
+    for row in list(snap.fx_rates):
+        if row.currency_code not in rate_set.rates_per_eur:
+            snap.fx_rates.remove(row)
+    for code, rate in sorted(rate_set.rates_per_eur.items()):
+        row = existing.get(code)
+        if row is None:
+            row = SnapshotFxRate(currency_code=code)
+            snap.fx_rates.append(row)
+        row.rate_per_eur = rate
+        row.effective_date = rate_set.effective_date
+        row.source = rate_set.source
+
+
+def merge_reporting_rate(
+    snap: Snapshot,
+    current_reporting: str,
+    new_reporting: str,
+    fetched: fx.RateSet,
+) -> None:
+    """Add a new reporting-currency rate without changing frozen cross-rates."""
+    saved = snapshot_rate_map(snap)
+    if not saved:
+        store_rate_set(snap, fetched)
+        return
+    if current_reporting not in saved:
+        raise fx.FxError(
+            f"The snapshot has no saved {current_reporting} reference rate."
+        )
+    required = {current_reporting, new_reporting}
+    if not fx.rate_set_supports(fetched, required):
+        raise fx.FxError(
+            f"Historical {current_reporting}/{new_reporting} rates are unavailable."
+        )
+    new_rate = fx.normalize_rate(
+        saved[current_reporting]
+        * fx.direct_rate(current_reporting, new_reporting, fetched.rates_per_eur)
+    )
+    existing = next(
+        (row for row in snap.fx_rates if row.currency_code == new_reporting),
+        None,
+    )
+    if existing:
+        existing.rate_per_eur = new_rate
+        existing.effective_date = fetched.effective_date
+        existing.source = fetched.source
+    else:
+        snap.fx_rates.append(
+            SnapshotFxRate(
+                currency_code=new_reporting,
+                rate_per_eur=new_rate,
+                effective_date=fetched.effective_date,
+                source=fetched.source,
+            )
+        )
+
+
+def merge_manual_reporting_rate(
+    snap: Snapshot,
+    new_reporting: str,
+    direct_rates: dict[str, Decimal],
+    effective_date,
+) -> None:
+    """Merge explicit native-to-new-reporting rates into a frozen rate basis."""
+    saved = snapshot_rate_map(snap)
+    if not saved:
+        store_rate_set(
+            snap,
+            fx.manual_rate_set(new_reporting, direct_rates, effective_date),
+        )
+        return
+    candidates: list[Decimal] = []
+    for source, direct in direct_rates.items():
+        if source not in saved:
+            raise fx.FxError(f"The snapshot has no saved {source} reference rate.")
+        candidates.append(
+            fx.normalize_rate(saved[source] * fx.normalize_rate(direct))
+        )
+    if not candidates:
+        raise fx.FxError("At least one manual exchange rate is required.")
+    target_rate = candidates[0]
+    tolerance = Decimal("0.00000001")
+    if any(abs(candidate - target_rate) > tolerance for candidate in candidates[1:]):
+        raise fx.FxError(
+            "Manual rates for this snapshot are inconsistent with one another."
+        )
+    existing = next(
+        (row for row in snap.fx_rates if row.currency_code == new_reporting),
+        None,
+    )
+    if existing:
+        existing.rate_per_eur = target_rate
+        existing.effective_date = effective_date
+        existing.source = "manual"
+    else:
+        snap.fx_rates.append(
+            SnapshotFxRate(
+                currency_code=new_reporting,
+                rate_per_eur=target_rate,
+                effective_date=effective_date,
+                source="manual",
+            )
+        )
+
+
+def snapshot_rate_summary(snap: Snapshot) -> Optional[dict]:
+    if not snap.fx_rates:
+        return None
+    first = snap.fx_rates[0]
+    sources = sorted({row.source for row in snap.fx_rates})
+    return {
+        "effective_date": first.effective_date,
+        "source": ", ".join(sources),
+    }
+
+
+def converted_balance_amount(
+    balance: Balance,
+    reporting: str,
+    rates: Optional[dict[str, Decimal]] = None,
+) -> Decimal:
+    return fx.convert(
+        balance.amount,
+        balance.currency_code,
+        reporting,
+        rates if rates is not None else snapshot_rate_map(balance.snapshot),
     )
 
 
 # ---------- Per-snapshot totals ----------
 
-def snapshot_totals(snap: Snapshot) -> dict:
+def snapshot_totals(snap: Snapshot, reporting: str = "GBP") -> dict:
     """
     Returns category-level rollup with hierarchical grouping.
 
@@ -50,9 +213,12 @@ def snapshot_totals(snap: Snapshot) -> dict:
     # Bucket per (category_id, group_key) where group_key is parent_id or ("leaf", account_id)
     cat_buckets: dict[int, dict] = {}
 
+    reporting = fx.normalize_currency(reporting)
+    rates = snapshot_rate_map(snap)
     for b in snap.balances:
         acc = b.account
         cat = acc.category
+        amount = converted_balance_amount(b, reporting, rates)
         cb = cat_buckets.setdefault(cat.id, {
             "category": cat,
             "total": Decimal("0"),
@@ -60,8 +226,13 @@ def snapshot_totals(snap: Snapshot) -> dict:
             "_leaves": [],   # list of leaf entries
             "_flat":   [],   # flat list for charts/exports
         })
-        cb["total"] += b.amount
-        cb["_flat"].append({"account": acc, "amount": b.amount})
+        cb["total"] += amount
+        cb["_flat"].append({
+            "account": acc,
+            "amount": amount,
+            "native_amount": b.amount,
+            "currency_code": b.currency_code,
+        })
 
         if acc.parent_id:
             pg = cb["_groups"].setdefault(acc.parent_id, {
@@ -71,13 +242,20 @@ def snapshot_totals(snap: Snapshot) -> dict:
                 "children": [],
                 "_sort":    (acc.parent.sort_order, acc.parent.id),
             })
-            pg["total"] += b.amount
-            pg["children"].append({"account": acc, "amount": b.amount})
+            pg["total"] += amount
+            pg["children"].append({
+                "account": acc,
+                "amount": amount,
+                "native_amount": b.amount,
+                "currency_code": b.currency_code,
+            })
         else:
             cb["_leaves"].append({
                 "type":    "leaf",
                 "account": acc,
-                "amount":  b.amount,
+                "amount":  amount,
+                "native_amount": b.amount,
+                "currency_code": b.currency_code,
                 "_sort":   (acc.sort_order, acc.id),
             })
 
@@ -109,6 +287,7 @@ def snapshot_totals(snap: Snapshot) -> dict:
         "net_worth":          net_worth,
         "net_worth_plus_aux": plus_aux,
         "liquid":             liquid,
+        "currency":           reporting,
     }
 
 
@@ -177,6 +356,7 @@ def time_series(db: Session, period: str = "weekly") -> dict:
     period: "weekly" (all snapshots), "monthly" (last per month), "quarterly" (last per quarter).
     """
     snaps = all_snapshots(db, ascending=True)
+    reporting = reporting_currency(db)
 
     if period == "monthly":
         snaps = _resample(snaps, key=lambda s: (s.snapshot_date.year, s.snapshot_date.month))
@@ -193,14 +373,20 @@ def time_series(db: Session, period: str = "weekly") -> dict:
         by_cat[c] = []
 
     for s in snaps:
-        t = snapshot_totals(s)
+        t = snapshot_totals(s, reporting)
         labels.append(s.snapshot_date.isoformat())
         nw.append(float(t["net_worth"]))
         liq.append(float(t["liquid"]))
         for cname in all_categories:
             by_cat[cname].append(float(t["category_map"].get(cname, Decimal("0"))))
 
-    return {"labels": labels, "net_worth": nw, "liquid": liq, "categories": by_cat}
+    return {
+        "labels": labels,
+        "net_worth": nw,
+        "liquid": liq,
+        "categories": by_cat,
+        "currency": reporting,
+    }
 
 
 def _resample(snaps: list[Snapshot], key) -> list[Snapshot]:
@@ -266,103 +452,104 @@ def assert_account_hierarchy_integrity(db: Session) -> None:
         )
 
 
-def balance_map(snap: Optional[Snapshot]) -> dict[int, Decimal]:
-    """account_id -> amount for the given snapshot (empty if None)."""
+def balance_map(
+    snap: Optional[Snapshot],
+    reporting: Optional[str] = None,
+) -> dict[int, Decimal]:
+    """Account amounts for a snapshot, native by default or converted when requested."""
     if snap is None:
         return {}
-    return {b.account_id: b.amount for b in snap.balances}
+    if reporting is None:
+        return {b.account_id: b.amount for b in snap.balances}
+    rates = snapshot_rate_map(snap)
+    return {
+        b.account_id: converted_balance_amount(b, reporting, rates)
+        for b in snap.balances
+    }
+
+
+def balance_currency_map(snap: Optional[Snapshot]) -> dict[int, str]:
+    if snap is None:
+        return {}
+    return {b.account_id: b.currency_code for b in snap.balances}
 
 
 # ---------- Per-account history (for the detail page) ----------
 
-def account_history(db: Session, account: Account) -> list[tuple]:
+def account_history(
+    db: Session,
+    account: Account,
+    reporting: Optional[str] = None,
+) -> list[tuple]:
     """
     Returns a list of (snapshot_date, amount) tuples sorted ascending.
     For a group account, sums balances across all of its leaf children per snapshot.
     Snapshots with no balances for the account (or its children) are omitted.
     """
-    if account.is_group:
-        child_ids = [c.id for c in account.children if not c.is_group]
-        if not child_ids:
-            return []
-        rows = db.execute(
-            select(Snapshot.snapshot_date, func.sum(Balance.amount))
-            .join(Balance, Balance.snapshot_id == Snapshot.id)
-            .where(Balance.account_id.in_(child_ids))
-            .group_by(Snapshot.id, Snapshot.snapshot_date)
-            .order_by(Snapshot.snapshot_date.asc(), Snapshot.id.asc())
-        ).all()
-        return [(r[0], r[1]) for r in rows]
-    else:
-        rows = db.execute(
-            select(Snapshot.snapshot_date, Balance.amount)
-            .join(Balance, Balance.snapshot_id == Snapshot.id)
-            .where(Balance.account_id == account.id)
-            .order_by(Snapshot.snapshot_date.asc(), Snapshot.id.asc())
-        ).all()
-        return [(r[0], r[1]) for r in rows]
+    target = reporting or reporting_currency(db)
+    account_ids = (
+        {c.id for c in account.children if not c.is_group}
+        if account.is_group
+        else {account.id}
+    )
+    if not account_ids:
+        return []
+    history: list[tuple] = []
+    for snap in all_snapshots(db, ascending=True):
+        rates = snapshot_rate_map(snap)
+        amounts = [
+            converted_balance_amount(balance, target, rates)
+            for balance in snap.balances
+            if balance.account_id in account_ids
+        ]
+        if amounts:
+            history.append((snap.snapshot_date, sum(amounts, Decimal("0"))))
+    return history
 
 
 def account_histories(
-    db: Session, accounts: list[Account]
+    db: Session,
+    accounts: list[Account],
+    reporting: Optional[str] = None,
 ) -> dict[int, list[tuple]]:
-    """Return snapshot histories for multiple leaf accounts in one query."""
+    """Return converted snapshot histories for multiple accounts."""
     result: dict[int, list[tuple]] = {account.id: [] for account in accounts}
-    leaf_ids = [account.id for account in accounts if not account.is_group]
-    if leaf_ids:
-        rows = db.execute(
-            select(Snapshot.snapshot_date, Balance.account_id, Balance.amount)
-            .join(Balance, Balance.snapshot_id == Snapshot.id)
-            .where(Balance.account_id.in_(leaf_ids))
-            .order_by(Snapshot.snapshot_date.asc(), Snapshot.id.asc())
-        ).all()
-        for snapshot_date, account_id, amount in rows:
-            result[account_id].append((snapshot_date, amount))
-
+    target = reporting or reporting_currency(db)
+    by_id = {account.id: account for account in accounts}
+    snaps = all_snapshots(db, ascending=True)
+    for snap in snaps:
+        rates = snapshot_rate_map(snap)
+        grouped: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+        for balance in snap.balances:
+            if balance.account_id in by_id:
+                grouped[balance.account_id] += converted_balance_amount(
+                    balance, target, rates
+                )
+        for account_id, amount in grouped.items():
+            result[account_id].append((snap.snapshot_date, amount))
     for account in accounts:
         if account.is_group:
-            result[account.id] = account_history(db, account)
+            result[account.id] = account_history(db, account, target)
     return result
 
 
-def latest_balance_for(db: Session, account: Account) -> Optional[Decimal]:
+def latest_balance_for(
+    db: Session,
+    account: Account,
+    reporting: Optional[str] = None,
+) -> Optional[Decimal]:
     """Quick lookup of the most recent balance for an account (or group total)."""
-    hist = account_history(db, account)
+    hist = account_history(db, account, reporting)
     return hist[-1][1] if hist else None
 
 
 def latest_balances_for_accounts(
-    db: Session, accounts: list[Account]
+    db: Session,
+    accounts: list[Account],
+    reporting: Optional[str] = None,
 ) -> dict[int, Optional[Decimal]]:
-    """Batched version of latest_balance_for() over multiple accounts.
-
-    Leaves are resolved in a single window-function query. Groups (rare here, only
-    when nested under another group) fall back to per-account history.
-    """
-    result: dict[int, Optional[Decimal]] = {a.id: None for a in accounts}
-    leaves = [a for a in accounts if not a.is_group]
-    if leaves:
-        ids = [a.id for a in leaves]
-        ranked = (
-            select(
-                Balance.account_id.label("account_id"),
-                Balance.amount.label("amount"),
-                func.row_number().over(
-                    partition_by=Balance.account_id,
-                    order_by=[Snapshot.snapshot_date.desc(), Snapshot.id.desc()],
-                ).label("rn"),
-            )
-            .join(Snapshot, Snapshot.id == Balance.snapshot_id)
-            .where(Balance.account_id.in_(ids))
-            .subquery()
-        )
-        rows = db.execute(
-            select(ranked.c.account_id, ranked.c.amount).where(ranked.c.rn == 1)
-        ).all()
-        for acc_id, amount in rows:
-            result[acc_id] = amount
-
-    for a in accounts:
-        if a.is_group:
-            result[a.id] = latest_balance_for(db, a)
-    return result
+    histories = account_histories(db, accounts, reporting)
+    return {
+        account.id: histories[account.id][-1][1] if histories[account.id] else None
+        for account in accounts
+    }

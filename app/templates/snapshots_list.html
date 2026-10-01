@@ -20,8 +20,8 @@
     <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide">
       <tr>
         <th class="text-left px-5 py-2 font-medium">Date</th>
-        <th class="text-right px-5 py-2 font-medium">Net Worth</th>
-        <th class="text-right px-5 py-2 font-medium">Liquid</th>
+        <th class="text-right px-5 py-2 font-medium">Net Worth ({{ reporting_currency }})</th>
+        <th class="text-right px-5 py-2 font-medium">Liquid ({{ reporting_currency }})</th>
         <th class="text-right px-5 py-2 font-medium"># Balances</th>
         <th class="text-left px-5 py-2 font-medium">Notes</th>
         <th class="px-5 py-2"></th>
@@ -32,8 +32,8 @@
         {% set t = totals_for(s) %}
         <tr>
           <td class="px-5 py-2 font-medium">{{ s.snapshot_date|dt }}</td>
-          <td class="px-5 py-2 text-right num">{{ t.net_worth|gbp }}</td>
-          <td class="px-5 py-2 text-right num text-slate-600">{{ t.liquid|gbp }}</td>
+          <td class="px-5 py-2 text-right num">{{ t.net_worth|money(reporting_currency) }}</td>
+          <td class="px-5 py-2 text-right num text-slate-600">{{ t.liquid|money(reporting_currency) }}</td>
           <td class="px-5 py-2 text-right text-slate-500">{{ s.balances|length }}</td>
           <td class="px-5 py-2 text-slate-500 truncate max-w-xs">{{ s.notes }}</td>
           <td class="px-5 py-2 text-right whitespace-nowrap">

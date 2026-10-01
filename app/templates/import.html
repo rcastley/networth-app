@@ -4,13 +4,13 @@
 {% block content %}
 <header class="mb-4">
   <h1 class="text-2xl font-semibold">Import / Export</h1>
-  <p class="text-sm text-slate-500">CSV format: a "Date" column (YYYY-MM-DD), an optional "Notes" column, then one column per account whose header matches the account name (case-insensitive). Derived columns like Liquid / Net Worth are ignored on import.</p>
+  <p class="text-sm text-slate-500">CSV format: Date, optional Notes, then account amount columns with optional “Account Currency” companions. Files without currency columns use each account's default. Derived totals are ignored on import.</p>
 </header>
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
   <section class="bg-white border border-slate-200 rounded-lg p-5">
     <h2 class="font-semibold text-slate-800 mb-2">Export</h2>
-    <p class="text-sm text-slate-500 mb-3">Downloads all snapshots in wide format, ready for re-import or for opening in Excel/Sheets.</p>
+    <p class="text-sm text-slate-500 mb-3">Downloads native amounts, ISO currency columns, and frozen FX metadata, plus derived totals in the reporting currency.</p>
     <a href="/export" class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">
       <span class="material-symbols-outlined text-lg">arrow_circle_down</span>
       Download CSV

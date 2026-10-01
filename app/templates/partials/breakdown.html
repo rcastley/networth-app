@@ -35,8 +35,8 @@
           </button>
         </td>
         <td class="px-5 py-2 text-right">
-          <div class="num {% if row.total < 0 %}text-red-600{% endif %}">{{ row.total|gbp }}</div>
-          <div>{{ m.delta_pill(row.total, prev_cat_total, invert=cat.is_liability) }}</div>
+          <div class="num {% if row.total < 0 %}text-red-600{% endif %}">{{ row.total|money(reporting_currency) }}</div>
+          <div>{{ m.delta_pill(row.total, prev_cat_total, invert=cat.is_liability, currency=reporting_currency) }}</div>
         </td>
         <td class="px-5 py-2 text-right text-slate-500 num">
           {% if cat.in_net_worth %}{{ row.total|pct(totals.net_worth) }}{% else %}–{% endif %}
@@ -56,7 +56,7 @@
                 <span class="ml-2 text-xs text-slate-400">{{ item.children|length }} accounts</span>
               </button>
             </td>
-            <td class="px-5 py-1.5 text-right num text-slate-700 {% if item.total < 0 %}text-red-600{% endif %}">{{ item.total|gbp }}</td>
+            <td class="px-5 py-1.5 text-right num text-slate-700 {% if item.total < 0 %}text-red-600{% endif %}">{{ item.total|money(reporting_currency) }}</td>
             <td class="px-5 py-1.5 text-right text-xs text-slate-400 num">
               {{ item.total|pct(row.total) }} of {{ cat.name }}
             </td>
@@ -67,7 +67,7 @@
               {{ ch.account.name }}
               {% if ch.account.notes %}<span class="ml-1 text-xs text-slate-400">· {{ ch.account.notes }}</span>{% endif %}
             </td>
-            <td class="px-5 py-1.5 text-right num text-slate-600 {% if ch.amount < 0 %}text-red-600{% endif %}">{{ ch.amount|gbp }}</td>
+            <td class="px-5 py-1.5 text-right num text-slate-600 {% if ch.amount < 0 %}text-red-600{% endif %}">{{ ch.amount|money(reporting_currency) }}</td>
             <td class="px-5 py-1.5 text-right text-xs text-slate-400 num">
               {{ ch.amount|pct(item.total) }} of {{ item.parent.name }}
             </td>
@@ -79,7 +79,7 @@
               {{ item.account.name }}
               {% if item.account.notes %}<span class="ml-1 text-xs text-slate-400">· {{ item.account.notes }}</span>{% endif %}
             </td>
-            <td class="px-5 py-1.5 text-right num text-slate-700 {% if item.amount < 0 %}text-red-600{% endif %}">{{ item.amount|gbp }}</td>
+            <td class="px-5 py-1.5 text-right num text-slate-700 {% if item.amount < 0 %}text-red-600{% endif %}">{{ item.amount|money(reporting_currency) }}</td>
             <td class="px-5 py-1.5 text-right text-xs text-slate-400 num">
               {{ item.amount|pct(row.total) }} of {{ cat.name }}
             </td>
@@ -92,8 +92,8 @@
     <tr>
       <td class="px-5 py-2.5">Net Worth (excl. aux)</td>
       <td class="px-5 py-2.5 text-right">
-        <div class="num">{{ totals.net_worth|gbp }}</div>
-        <div>{{ m.delta_pill(totals.net_worth, prev_totals.net_worth if prev_totals else none) }}</div>
+        <div class="num">{{ totals.net_worth|money(reporting_currency) }}</div>
+        <div>{{ m.delta_pill(totals.net_worth, prev_totals.net_worth if prev_totals else none, currency=reporting_currency) }}</div>
       </td>
       <td class="px-5 py-2.5 text-right text-slate-400">100.0%</td>
     </tr>

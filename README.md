@@ -4,13 +4,13 @@ Self-hosted personal net-worth tracker. FastAPI + Jinja2 + Tailwind + SQLite, pa
 
 ## What it does
 
-Track balances across accounts at any cadence — weekly, daily, multiple times a day. Each snapshot stores per-account balances at a point in time, with both date and time so intra-day captures are unambiguous.
+Track balances across accounts at any cadence — weekly, daily, multiple times a day. Each snapshot stores per-account balances and their native currencies at a point in time, with both date and time so intra-day captures are unambiguous.
 
 The Accounts page is the home view: headline cards (Net Worth / Liquid / Net Worth + Aux) with per-card sparklines and period-over-period deltas, a collapsible tabbed insight widget (Trend chart + allocation doughnut on one tab; hierarchical category breakdown with deltas on the other), and a card grid of every top-level account — each card showing its current balance, change since the previous snapshot, and a red badge on group cards indicating sub-account count. A **Hide values** control masks balances and changes across the dashboard when you need quick protection from shoulder surfing. Accounts can be organised into groups — e.g. all the sub-pots of a single bank account under one parent — so this page and the snapshot entry form mirror how you actually think about your money.
 
 Clicking any account card opens its detail page with two tabs: **Summary** (trend chart, recent values, and individual sparklines beside sub-accounts for groups) and **Edit** (account fields, institution domain for the logo, delete). Sub-account sparklines use the per-account balances already stored in past snapshots, so existing history is available immediately; a child needs at least two recorded balances before a line can be drawn. Account grouping is deliberately one level deep—top-level group → leaf sub-account—so groups cannot be nested. Saving, deleting, or creating any account / category / snapshot shows a toast confirmation in the bottom-right.
 
-CSV import / export is built in for backfilling history and round-tripping to spreadsheets. An in-app help panel (the "?" button in the top-right) walks first-time users through the workflow; the content lives in `app/help.yaml` and can be edited without touching code.
+CSV import / export is built in for backfilling history and round-tripping to spreadsheets, including native currency codes and frozen FX metadata. An in-app help panel (the "?" button in the top-right) walks first-time users through the workflow; the content lives in `app/help.yaml` and can be edited without touching code.
 
 No authentication — designed to sit on a LAN or behind your existing reverse-proxy auth (Authelia, Tailscale, etc.).
 
@@ -19,6 +19,14 @@ No authentication — designed to sit on a LAN or behind your existing reverse-p
 Select **Hide values** beside **Add account** to blur balances and deltas on the three headline cards and every account card. The control changes to **Show values** while masking is active, and the browser remembers the setting between page loads.
 
 Privacy mode is a visual convenience for shoulder-surfing protection, not an access-control or encryption feature. The underlying values remain in the rendered page and API responses. The browser stores only the hide/show preference—not any financial values.
+
+## Multi-currency
+
+Choose the app-wide **reporting currency** under **Settings**. Each leaf account has its own default currency, and every balance can override that currency on the snapshot form. Native amounts are kept unchanged; combined cards, categories, allocation, breakdowns, and charts are converted before they are summed.
+
+Foreign balances use the latest daily reference rates from the free, keyless [Frankfurter](https://frankfurter.dev/) service. The complete rate set and effective business date are frozen with the snapshot, so later market movements do not rewrite history. If the service is unavailable, enter the displayed native-to-reporting fallback rate manually. Editing a snapshot keeps its frozen rates unless **Refresh foreign exchange rates** is selected.
+
+Changing the reporting currency re-expresses the full history. Existing pre-multi-currency data is labelled GBP without changing a single amount. When another reporting currency is selected, the confirmation page identifies legacy snapshots that need historical rates; those are fetched only after confirmation, with manual fields available for unavailable dates.
 
 ## Quick start
 
@@ -145,6 +153,7 @@ Current migrations:
 - `0003` — `snapshot_date` becomes `DateTime` and drops the unique constraint (multiple snapshots per day allowed)
 - `0004` — adds `institution_domain` and `logo_url` columns to accounts (institution logos)
 - `0005` — adds hot-path indexes on `snapshots.snapshot_date` and `balances.account_id`
+- `0006` — adds account/balance currencies, the reporting-currency setting, and frozen per-snapshot FX rates; existing rows are backfilled as GBP without changing amounts
 
 To create a new migration after a model change:
 
@@ -164,6 +173,7 @@ docker compose restart networth
 - `/categories` — inline edit + add (with color swatches alongside a native picker)
 - `/import` — CSV import / export
 - `/export` — direct CSV download
+- `/settings` — reporting currency and historical-rate conversion preview
 - `/api/chart-data?period=weekly|monthly|quarterly` — JSON for the trend chart
 - `/healthz` — container health check
 
@@ -178,7 +188,7 @@ Errors are content-negotiated: browsers get a styled HTML error page with Back /
 - **Tailwind CSS** (built at image-build time, no runtime CDN) — styling, plus a small CSS-variable design-token layer in `app/static/src.css`
 - **Chart.js** (installed from the npm lockfile and served locally) — line + doughnut charts (trend, allocation, headline sparklines, account-detail sparkline)
 - **Material Symbols Outlined** (Google Fonts, filtered to the ~16 icons actually used) — UI iconography
-- **Bricolage Grotesque** (Google Fonts) — display font for headings and the `£` wordmark
+- **Bricolage Grotesque** (Google Fonts) — display font for headings and the currency-neutral wordmark
 - **PyYAML** — loads in-app help content from `app/help.yaml`
 
 Total Python deps: 7. Runs comfortably in <100 MB of RAM.

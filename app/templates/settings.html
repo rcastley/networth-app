@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Settings · Net Worth{% endblock %}
+
+{% block content %}
+<header class="mb-5">
+  <h1 class="text-2xl font-semibold">Settings</h1>
+  <p class="text-sm text-slate-500 mt-1">Choose the currency used for combined totals, charts, and breakdowns.</p>
+</header>
+
+{% if error %}
+  <div role="alert" class="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>
+{% endif %}
+
+<section class="max-w-3xl bg-white border border-slate-200 rounded-lg p-6">
+  {% if preview is none %}
+    <form method="post" action="/settings" class="space-y-5">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+      <div>
+        <label for="reporting-currency" class="block text-sm font-medium text-slate-700 mb-1">Reporting currency</label>
+        <select id="reporting-currency" name="reporting_currency"
+                class="w-full max-w-sm border border-slate-300 rounded px-3 py-2 text-sm">
+          {% for code, name in currency_options %}
+            <option value="{{ code }}" {% if code == selected_currency %}selected{% endif %}>{{ code }} — {{ name }}</option>
+          {% endfor %}
+        </select>
+        <p class="text-xs text-slate-500 mt-2">
+          Account balances remain in their recorded native currency. Changing this setting only re-expresses combined values.
+        </p>
+      </div>
+      <button class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">
+        <span aria-hidden="true" class="material-symbols-outlined text-lg">check_circle</span>
+        Review change
+      </button>
+    </form>
+  {% else %}
+    <form method="post" action="/settings" class="space-y-5">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+      <input type="hidden" name="reporting_currency" value="{{ selected_currency }}">
+      <input type="hidden" name="confirmed" value="yes">
+
+      <div>
+        <h2 class="font-semibold text-slate-900">Change {{ current_currency }} to {{ selected_currency }}?</h2>
+        <p class="text-sm text-slate-600 mt-1">
+          All combined history will be displayed in {{ selected_currency }}.
+          {% if preview %}
+            {{ preview|length }} legacy snapshot{{ '' if preview|length == 1 else 's' }} need historical rates.
+            Rates are fetched from Frankfurter when you confirm.
+          {% else %}
+            Every snapshot already has the rates required, so no historical download is needed.
+          {% endif %}
+        </p>
+      </div>
+
+      {% if preview %}
+        <div class="border border-slate-200 rounded overflow-hidden">
+          <div class="px-4 py-2 bg-slate-50 text-xs font-medium text-slate-600 uppercase tracking-wide">Manual fallback</div>
+          <div class="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+            {% for item in preview %}
+              <div class="px-4 py-3">
+                <div class="text-sm font-medium text-slate-700">{{ item.snapshot.snapshot_date|dt }}</div>
+                <p class="text-xs text-slate-500 mb-2">Leave blank unless the historical-rate service fails.</p>
+                <div class="flex flex-wrap gap-3">
+                  {% for code in item.currencies %}
+                    <label class="text-xs text-slate-600">
+                      1 {{ code }} =
+                      <input name="manual_{{ item.snapshot.id }}_{{ code }}" inputmode="decimal"
+                             aria-label="Manual {{ code }} to {{ selected_currency }} rate for {{ item.snapshot.snapshot_date|dt }}"
+                             class="num w-24 border border-slate-300 rounded px-2 py-1 text-right">
+                      {{ selected_currency }}
+                    </label>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+
+      <div class="flex justify-end gap-2">
+        <a href="/settings" class="px-4 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50">Cancel</a>
+        <button class="inline-flex items-center gap-1 bg-brand-700 hover:bg-brand-900 text-white text-sm font-medium px-4 py-2 rounded">
+          <span aria-hidden="true" class="material-symbols-outlined text-lg">check_circle</span>
+          Confirm change
+        </button>
+      </div>
+    </form>
+  {% endif %}
+</section>
+{% endblock %}

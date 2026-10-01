@@ -2,7 +2,7 @@
 from datetime import datetime, date, timezone
 from sqlalchemy import (
     Column, Integer, String, Boolean, Date, DateTime, Numeric,
-    ForeignKey, UniqueConstraint
+    CheckConstraint, ForeignKey, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 from .db import Base
@@ -37,6 +37,7 @@ class Account(Base):
     is_group    = Column(Boolean, default=False, nullable=False)
     institution_domain = Column(String, nullable=True)  # e.g. "chase.com"
     logo_url           = Column(String, nullable=True)  # full URL override
+    currency_code      = Column(String(3), default="GBP", nullable=False)
 
     category = relationship("Category", back_populates="accounts")
     balances = relationship("Balance", back_populates="account", cascade="all, delete-orphan")
@@ -56,6 +57,12 @@ class Snapshot(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    fx_rates = relationship(
+        "SnapshotFxRate",
+        back_populates="snapshot",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 class Balance(Base):
@@ -64,8 +71,45 @@ class Balance(Base):
     snapshot_id = Column(Integer, ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=False)
     account_id  = Column(Integer, ForeignKey("accounts.id",  ondelete="CASCADE"), nullable=False, index=True)
     amount      = Column(Numeric(14, 2), nullable=False, default=0)
+    currency_code = Column(String(3), default="GBP", nullable=False)
 
     snapshot = relationship("Snapshot", back_populates="balances")
     account  = relationship("Account",  back_populates="balances")
 
     __table_args__ = (UniqueConstraint("snapshot_id", "account_id", name="uq_snap_acc"),)
+
+
+class AppSettings(Base):
+    """Singleton application preferences."""
+    __tablename__ = "app_settings"
+
+    id = Column(Integer, primary_key=True, default=1)
+    reporting_currency = Column(String(3), default="GBP", nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_app_settings_singleton"),
+    )
+
+
+class SnapshotFxRate(Base):
+    """Frozen units-per-EUR exchange rate used by one snapshot."""
+    __tablename__ = "snapshot_fx_rates"
+
+    id = Column(Integer, primary_key=True)
+    snapshot_id = Column(
+        Integer,
+        ForeignKey("snapshots.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    currency_code = Column(String(3), nullable=False)
+    rate_per_eur = Column(Numeric(20, 10), nullable=False)
+    effective_date = Column(Date, nullable=False)
+    source = Column(String(16), nullable=False, default="ecb")
+
+    snapshot = relationship("Snapshot", back_populates="fx_rates")
+
+    __table_args__ = (
+        UniqueConstraint("snapshot_id", "currency_code", name="uq_snapshot_fx_currency"),
+        CheckConstraint("rate_per_eur > 0", name="ck_snapshot_fx_positive"),
+    )
